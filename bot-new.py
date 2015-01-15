@@ -121,10 +121,10 @@ def fix_url(iri):
 
 def setup_logging():
     root = logging.getLogger();
-    root.setLevel(logging.DEBUG);
+    root.setLevel(logging.INFO);
 
     ch = logging.StreamHandler(sys.stdout);
-    ch.setLevel(logging.DEBUG);
+    ch.setLevel(logging.INFO);
 
     root.addHandler(ch);
 
