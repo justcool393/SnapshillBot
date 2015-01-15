@@ -119,6 +119,14 @@ def fix_url(iri):
         for parti, part in enumerate(parts)
     );
 
+def setup_logging():
+    root = logging.getLogger();
+    root.setLevel(logging.DEBUG);
+
+    ch = logging.StreamHandler(sys.stdout);
+    ch.setLevel(logging.DEBUG);
+
+    root.addHandler(ch);
 
 def log_crash(e):
     logging.error("Error occurred in the bot; restarting in 15 seconds...");
@@ -128,6 +136,7 @@ def log_crash(e):
 
 
 try:
+    setup_logging();
     main();
 except (NameError, SyntaxError) as e:
     logging.error(str(e));
