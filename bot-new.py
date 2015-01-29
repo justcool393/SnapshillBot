@@ -93,7 +93,9 @@ def archive(url):
 
 def post(r, s, archived):
     comment = """
-Automatically archived [here]({link}). ^([^Info ^and ^News](/r/SSBot) ^| ^[Contact](/meessage/compose?to=\/r\/SnapshillBot) ^| [^Post's ^Sponsor]({shill})^)""";
+Automatically archived [here]({link}).
+
+^[ [^Info ^and ^News](/r/SSBot) ^| ^[Contact](/message/compose?to=\/r\/SnapshillBot) ^| [^Post's ^Sponsor]({shill}) ^]""";
 
     try:
         s.add_comment(comment.format(link=archived, shill=get_company()));
