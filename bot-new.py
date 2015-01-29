@@ -93,13 +93,8 @@ def archive(url):
 
 def post(r, s, archived):
     comment = """
-[Archived version of the linked \(or this text\) post]({link})
-
-----
-	
-[This post is sponsored in part by this organization.]({shill})
-
-I am a bot. [Message me](/message/compose?to=\/r\/SnapshillBot) if you have any issues or questions. [News is posted here.](/r/SSBot)""";
+Automatically archived [here]({link}). ^\([Info ^and ^News](/r/SSBot) ^| ^[Contact](/meessage/compose?to=\/r\/SnapshillBot) ^| ^[Post's Sponsor]({shill})\)""";
+    
     try:
         s.add_comment(comment.format(link=archived, shill=get_company()));
     except Exception as e:
