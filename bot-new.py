@@ -12,6 +12,7 @@ def main():
     r = praw.Reddit("Creates snapshots using archive.today", domain="api.reddit.com");
     r.login(user, os.environ['REDDIT_PASS']);
     logging.info("Logged in and started post archiving.");
+    add_archived(r);
     s = r.get_subreddit('Buttcoin');
 
     check_at = 3600;
@@ -32,6 +33,12 @@ def main():
 
         arch += archive_submissions(r, s, SUBMISSION_SCAN_COUNT, 240);
 
+def add_archived(r):
+    for c in r.user.get_comments(sort='new', limit=None):
+        pid = c.parent_id;
+        if pid is None or pid in archived:
+            continue;
+        archived.append(pid);
 
 def archive_submissions(r, s, count, delay):
     archived_posts = 0;
