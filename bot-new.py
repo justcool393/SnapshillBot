@@ -1,5 +1,10 @@
 import logging, os, praw, re, random, time, urlparse, urllib2, sys;
 
+INFO = "/r/SSBot";
+CONTACT = "/message/compose?to=\/r\/SnapshillBot";
+ARCHIVE_SELF = os.environ['ARCHIVE_SELF'] is "1";
+SUBMISSION_SCAN_COUNT = 10;
+
 archived = [];
 user = os.environ['REDDIT_USER'];
 
@@ -25,17 +30,17 @@ def main():
                 arch = 0;
                 times_zero = 1;
 
-        arch += archive_submissions(r, s, 5, 120);
+        arch += archive_submissions(r, s, SUBMISSION_SCAN_COUNT, 240);
 
 
 def archive_submissions(r, s, count, delay):
     archived_posts = 0;
+
     for submission in s.get_new(limit=count):
-
-        submission.replace_more_comments(limit=None, threshold=0);
-
         if submission.id in archived:
             continue;
+
+        submission.replace_more_comments(limit=None, threshold=0);
 
         commented = check_commented(submission);
 
@@ -44,8 +49,9 @@ def archive_submissions(r, s, count, delay):
             continue;
 
         try:
-            archive_and_post(r, submission);
-            archived_posts += 1;
+            if archive_and_post(r, submission):
+                archived_posts += 1;
+                archived.append(submission.id);
         except UnicodeEncodeError:
             logging.error("Unable to archive post (UnicodeEncodeError, Submission ID: " + submission.id + ")");
 
@@ -67,7 +73,8 @@ def get_company():
                  "http://www.goldmansachs.com/", "http://www.jpmorganchase.com/",
                  "http://www.nsa.gov/", "http://www.cia.gov/", "http://www.commonwealthbank.com.au/",
                  "http://www.gchq.gov.uk/", "http://www.dhs.gov/", "http://www.gov.uk/hm-treasury/",
-                 "http://www.csis-scrs.gc.ca/", "http://tbs-sct.gc.ca/"];
+                 "http://www.csis-scrs.gc.ca/", "http://tbs-sct.gc.ca/", "https://www.apple.com/apple-pay/",
+                 "http://www.buttcoinfoundation.org/", "http://www.fda.gov/"];
     return random.choice(companies);
 
 
@@ -77,14 +84,15 @@ def get_response(url, data):
 
 
 def get_redirected_url(data):
-    return re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', data)[0];
+    return re.findall('http[s]?://archive.today/[0-z]{1,6}', data)[0];
+    #return re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', data)[0];
 
 
 def archive_and_post(r, s):
-    if s.is_self and os.environ['ARCHIVE_SELF'] is not "1":
-        return;
+    if s.is_self and not ARCHIVE_SELF:
+        return False;
     arch_post = archive(s.url);
-    post(r, s, arch_post);
+    return post(r, s, arch_post);
 
 
 def archive(url):
@@ -95,14 +103,16 @@ def post(r, s, archived):
     comment = """
 Automatically archived [here]({link}).
 
-^[ [^Info ^and ^News](/r/SSBot) ^| ^[Contact](/message/compose?to=\/r\/SnapshillBot) ^| [^Post's ^Sponsor]({shill}) ^]""";
+*I am a bot. ([Info]({info}) | [Contact]({contact}) | [Sponsor]({shill}))*
+""";
 
     try:
-        s.add_comment(comment.format(link=archived, shill=get_company()));
+        s.add_comment(comment.format(link=archived, info=INFO, contact=CONTACT, shill=get_company()));
     except Exception as e:
-        logging.error("Exception on comment add! (Submission ID: " + str(s.id) + ")");
+        logging.error("Error adding comment. (Submission ID: " + str(s.id) + ")");
         logging.error(str(e));
-        pass;
+        return False;
+    return True;
 
 
 def urlEncodeNonAscii(b):
@@ -119,7 +129,7 @@ def fix_url(iri):
 def setup_logging():
     root = logging.getLogger();
     root.setLevel(logging.INFO);
-
+    logging.getLogger("requests").setLevel(logging.WARNING);
     ch = logging.StreamHandler(sys.stdout);
     ch.setLevel(logging.INFO);
 
@@ -135,7 +145,8 @@ def log_crash(e):
 try:
     setup_logging();
     main();
-except (NameError, SyntaxError) as e:
+except (NameError, SyntaxError, AttributeError) as e:
+    logging.error("Syntatical error!");
     logging.error(str(e));
     time.sleep(86400); # Sleep for 1 day so we don't restart.
 except Exception as e:
