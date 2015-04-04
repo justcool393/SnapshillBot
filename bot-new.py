@@ -13,7 +13,7 @@ def main():
     r.login(user, os.environ['REDDIT_PASS']);
     logging.info("Logged in and started post archiving.");
     add_archived(r);
-    s = r.get_subreddit('Buttcoin');
+    s = r.get_subreddit('Buttcoin+Oppression+RedditCensorship+SSBot+TheBluePill+undelete');
 
     check_at = 3600;
     last_checked = 0;
@@ -56,7 +56,7 @@ def archive_submissions(r, s, count, delay):
             continue;
 
         try:
-            if archive_and_post(r, submission):
+            if archive_and_post(submission):
                 archived_posts += 1;
                 archived.append(submission.id);
         except UnicodeEncodeError:
@@ -75,16 +75,6 @@ def check_commented(s):
     return False;
 
 
-def get_company():
-    companies = ["http://www.westernunion.com/", "http://www.bankofamerica.com/", "http://www.federalreserve.gov/",
-                 "http://www.goldmansachs.com/", "http://www.jpmorganchase.com/",
-                 "http://www.nsa.gov/", "http://www.cia.gov/", "http://www.commonwealthbank.com.au/",
-                 "http://www.gchq.gov.uk/", "http://www.dhs.gov/", "http://www.gov.uk/hm-treasury/",
-                 "http://www.csis-scrs.gc.ca/", "http://tbs-sct.gc.ca/", "https://www.apple.com/apple-pay/",
-                 "http://www.buttcoinfoundation.org/", "http://www.fda.gov/"];
-    return random.choice(companies);
-
-
 def get_response(url, data):
     res = urllib2.urlopen(fix_url(url), data);
     return res.read();
@@ -95,26 +85,26 @@ def get_redirected_url(data):
     #return re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', data)[0];
 
 
-def archive_and_post(r, s):
+def archive_and_post(s):
     if s.is_self and not ARCHIVE_SELF:
         return False;
     arch_post = archive(s.url);
-    return post(r, s, arch_post);
+    return post(s, arch_post);
 
 
 def archive(url):
     return get_redirected_url(get_response("https://archive.today/submit/", "url=" + url));
 
 
-def post(r, s, archived):
+def post(s, archived):
     comment = """
 Automatically archived [here]({link}).
 
-*I am a bot. ([Info]({info}) | [Contact]({contact}) | [Sponsor]({shill}))*
+*I am a bot. ([Info]({info}) | [Contact]({contact}))*
 """;
 
     try:
-        s.add_comment(comment.format(link=archived, info=INFO, contact=CONTACT, shill=get_company()));
+        s.add_comment(comment.format(link=archived, info=INFO, contact=CONTACT));
     except Exception as e:
         logging.error("Error adding comment. (Submission ID: " + str(s.id) + ")");
         logging.error(str(e));
