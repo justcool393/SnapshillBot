@@ -110,7 +110,7 @@ def archive_and_post(s):
 
 
 def archive(url):
-    pairs = [{"url", url}]
+    pairs = {"url", url}
     return get_redirected_url(get_response("https://archive.today/submit/",
                                            urllib.urlencode(pairs)))
 
