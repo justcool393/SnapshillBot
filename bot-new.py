@@ -9,6 +9,8 @@ import urlparse
 import urllib2
 import sys
 
+from urllib import urlparse
+
 INFO = "/r/SSBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_SELF = os.environ['ARCHIVE_SELF'] is "1"
@@ -109,8 +111,7 @@ def archive_and_post(s):
 
 def archive(url):
     return get_redirected_url(get_response("https://archive.today/submit/",
-                                           "url=" + urllib2.urlencode(url)
-                                           +  ""))
+                                           "url=" + urlencode(url) + ""))
 
 
 def post(s, archive_link):
