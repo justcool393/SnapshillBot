@@ -7,9 +7,9 @@ import time
 import traceback
 import urlparse
 import urllib2
+import urllib
 import sys
 
-from urllib import urlparse
 
 INFO = "/r/SSBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
@@ -110,8 +110,9 @@ def archive_and_post(s):
 
 
 def archive(url):
+    pairs = [{"url", url}]
     return get_redirected_url(get_response("https://archive.today/submit/",
-                                           "url=" + urlencode(url) + ""))
+                                           urllib.urlencode(pairs)))
 
 
 def post(s, archive_link):
