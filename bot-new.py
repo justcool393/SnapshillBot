@@ -4,6 +4,7 @@ import praw
 import re
 import random
 import time
+import traceback
 import urlparse
 import urllib2
 import sys
@@ -155,6 +156,7 @@ def setup_logging():
 def log_crash(e):
     logging.error("Error occurred in the bot restarting in 15 seconds...")
     logging.error("Details: " + str(e))
+    traceback.print_exc()
     time.sleep(15)
     sys.exit(1)  # Signal to the host that we crashed
 
