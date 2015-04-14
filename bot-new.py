@@ -109,7 +109,8 @@ def archive_and_post(s):
 
 def archive(url):
     return get_redirected_url(get_response("https://archive.today/submit/",
-                                           "url='" + url + "'"))
+                                           "url=" + urllib2.urlencode(url)
+                                           +  ""))
 
 
 def post(s, archive_link):
