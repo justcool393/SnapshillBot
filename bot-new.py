@@ -15,7 +15,8 @@ INFO = "/r/SSBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_SELF = os.environ['ARCHIVE_SELF'] is "1"
 SUBMISSION_SCAN_COUNT = 10
-SUBREDDIT = "Buttcoin+Oppression+RedditCensorship+SSBot+TheBluePill+undelete"
+SUBREDDIT = "Buttcoin+Oppression+RedditCensorship+SSBot+TheBluePill+undelete" \
+            "+MildRedditDrama"
 
 archived = []
 user = os.environ['REDDIT_USER']
