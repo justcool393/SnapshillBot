@@ -11,7 +11,7 @@ import urllib
 import sys
 
 
-INFO = "/r/SSBot"
+INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_SELF = os.environ['ARCHIVE_SELF'] is "1"
 SUBMISSION_SCAN_COUNT = 10
@@ -100,7 +100,7 @@ def get_response(url, data):
 
 
 def get_redirected_url(data):
-    return re.findall('http[s]?://archive.today/[0-z]{1,6}', data)[0]
+    return re.findall('http[s]?://archive.[today|is]/[0-z]{1,6}', data)[0]
 
 
 def archive_and_post(s):
