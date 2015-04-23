@@ -100,7 +100,7 @@ def get_response(url, data):
 
 
 def get_redirected_url(data):
-    return re.findall('http[s]?://archive.[today|is]/[0-z]{1,6}', data)[0]
+    return re.findall('http[s]?://archive.is/[0-z]{1,6}', data)[0]
 
 
 def archive_and_post(s):
