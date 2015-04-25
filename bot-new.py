@@ -10,7 +10,7 @@ import urllib2
 import urllib
 import sys
 
-USER_AGENT = "Archive Bot (/u/justcool393) v1.1"
+USER_AGENT = "Archives to archive.is (/u/justcool393) v1.1"
 REDDIT_DOMAIN = "api.reddit.com"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
@@ -32,7 +32,7 @@ def main():
     last_checked = 0
     times_zero = 1
 
-    arch = archive_submissions(r, s, 50, 0)
+    arch = archive_submissions(r, 50, 0)
     # Check the last 50 posts on startup
     while True:
         if time.time() - last_checked > check_at:
