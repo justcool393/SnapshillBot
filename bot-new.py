@@ -93,13 +93,8 @@ def check_commented(s):
     return False
 
 
-def get_response(url, data):
-    res = urllib2.urlopen(fix_url(url), data)
-    return res.read()
-
-
-def get_redirected_url(data):
-    return re.findall('http[s]://archive.(today|is|li)/[0-z]{1,8}', data)[0]
+def get_archive_link(data):
+    return re.findall("http[s]://archive\.(today|is|li)/[0-z]{1,8}", data)[0]
 
 
 def archive_and_post(s):
@@ -111,39 +106,29 @@ def archive_and_post(s):
 
 def archive(url):
     pairs = {"url": url}
-    return get_redirected_url(get_response("https://archive.is/submit/",
-                                           urllib.urlencode(pairs)))
+    res = urllib2.urlopen("https://archive.is/submit/", urllib.urlencode(pairs))
+    return get_archive_link(res.read())
 
 
 def post(s, archive_link):
     comment = """
-Automatically archived [here]({link}).
+Automatically archived [here]({link}). {quip}
 
-*I am a bot. ([Info]({info}) | [Contact]({contact}))*
+*^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({contact}))*
 """
 
     try:
         s.add_comment(
-            comment.format(link=archive_link, info=INFO, contact=CONTACT))
+            comment.format(link=archive_link, info=INFO, contact=CONTACT,
+                           quip=""))
     except Exception as ex:
-        logging.error(
-            "Error adding comment. (Submission ID: " + str(s.id) + ")")
+        logging.error("Error adding comment (Submission ID: " + str(s.id) + ")")
         logging.error(str(ex))
         return False
     return True
 
-
-def urlEncodeNonAscii(b):
-    return re.sub('[\x80-\xFF]', lambda c: '%%%02x' % ord(c.group(0)), b)
-
-
-def fix_url(iri):
-    parts = urlparse.urlparse(iri)
-    return urlparse.urlunparse(
-        part.encode('idna') if parti == 1 else urlEncodeNonAscii(
-            part.encode('utf-8'))
-        for parti, part in enumerate(parts)
-    )
+def get_quip(subreddit):
+    pass # TODO: Implement
 
 
 def setup_logging():
