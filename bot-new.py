@@ -10,30 +10,29 @@ import urllib2
 import urllib
 import sys
 
-
+USER_AGENT = "Archive Bot (/u/justcool393) v1.1"
+REDDIT_DOMAIN = "api.reddit.com"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
-ARCHIVE_SELF = os.environ['ARCHIVE_SELF'] is "1"
+ARCHIVE_SELF = os.environ.get('ARCHIVE_SELF') is "1"
 SUBMISSION_SCAN_COUNT = 10
-SUBREDDIT = "Buttcoin+Oppression+RedditCensorship+SSBot+TheBluePill+undelete" \
-            "+MildRedditDrama"
+WAIT_TIME = 4 * 60
 
 archived = []
 user = os.environ['REDDIT_USER']
 
 
 def main():
-    r = praw.Reddit("Snapshot Bot (/u/justcool393)", domain="api.reddit.com")
-    r.login(user, os.environ['REDDIT_PASS'])
+    r = praw.Reddit(USER_AGENT, domain=REDDIT_DOMAIN)
+    r.login(user, os.environ.get("REDDIT_PASS"))
     logging.info("Logged in and started post archiving.")
     add_archived(r)
-    s = r.get_subreddit(SUBREDDIT)
 
     check_at = 3600
     last_checked = 0
     times_zero = 1
 
-    arch = archive_submissions(r, s, 50, 90)
+    arch = archive_submissions(r, s, 50, 0)
     # Check the last 50 posts on startup
     while True:
         if time.time() - last_checked > check_at:
@@ -47,7 +46,7 @@ def main():
                 arch = 0
                 times_zero = 1
 
-        arch += archive_submissions(r, s, SUBMISSION_SCAN_COUNT, 240)
+        arch += archive_submissions(r, SUBMISSION_SCAN_COUNT, WAIT_TIME)
 
 
 def add_archived(r):
@@ -58,10 +57,10 @@ def add_archived(r):
         archived.append(pid)
 
 
-def archive_submissions(r, s, count, delay):
+def archive_submissions(r, count, delay):
     archived_posts = 0
 
-    for submission in s.get_new(limit=count):
+    for submission in r.get_new(limit=count):
         if submission.id in archived:
             continue
 
@@ -100,7 +99,7 @@ def get_response(url, data):
 
 
 def get_redirected_url(data):
-    return re.findall('http[s]?://archive.is/[0-z]{1,6}', data)[0]
+    return re.findall('http[s]://archive.(today|is|li)/[0-z]{1,8}', data)[0]
 
 
 def archive_and_post(s):
@@ -111,8 +110,8 @@ def archive_and_post(s):
 
 
 def archive(url):
-    pairs = {"url" : url}
-    return get_redirected_url(get_response("https://archive.today/submit/",
+    pairs = {"url": url}
+    return get_redirected_url(get_response("https://archive.is/submit/",
                                            urllib.urlencode(pairs)))
 
 
