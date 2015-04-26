@@ -94,7 +94,7 @@ def check_commented(s):
 
 
 def get_archive_link(data):
-    return re.findall("http[s]://archive\.is/[0-z]{1,8}", data)[0]
+    return re.findall("http[s]?://archive.is/[0-z]{1,6}", data)[0]
 
 
 def archive_and_post(s):
