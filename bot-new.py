@@ -22,7 +22,6 @@ REDDIT_DOMAIN = "api.reddit.com"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_SELF = os.environ.get('ARCHIVE_SELF') is "1"
-SUBMISSION_SCAN_COUNT = 10
 ARCHIVE_BOTS = ["snapshillbot", "ttumblrbots"]
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
 
@@ -32,7 +31,7 @@ RECOVERABLE_EXC = (ConnectionError,
                    ClientException,
                    RateLimitExceeded)
 
-loglevel = LogLevel.INFO
+loglevel = logging.INFO
 
 logging.basicConfig(level=loglevel,
                     format="[%(asctime)s] [%(levelname)s] %(message)s")
