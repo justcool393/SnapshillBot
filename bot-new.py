@@ -89,9 +89,8 @@ class Notification:
                     (self.post.name, c.name))
 
     def _build(self):
-        parts = [self.ext.get()]
-        parts.append("Snapshots:")
-        count = 0
+        parts = [self.ext.get(), "Snapshots:"]
+        count = 1
         for l in self.links:
             parts.append("* [Link " + str(count) + "](" + l + ")")
             count += 1
@@ -156,7 +155,7 @@ class Snapshill:
 
     def _get_ext(self, subreddit):
         for e in self.extxt:
-            if e.subreddit == subreddit:
+            if e.subreddit.lower() == subreddit.display_name.lower():
                 return e
         return self.extxt[0]
 
