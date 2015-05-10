@@ -70,6 +70,31 @@ def archive(url):
 def log_error(e):
     log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
                                           traceback.format_exc()))
+class FTPSaver:
+
+    def __init__(self, file, folder, server, user, ftppass):
+        self.file = file
+        self.folder = folder
+        self.server = server
+        self.user = user
+        self.ftppass = ftppass
+
+    def create_session(self):
+        session = ftplib.FTP(self.server, self.user, self.ftppass)
+        session.cwd(self.folder)
+        return session
+
+    def upload(self):
+        session = self.create_session()
+        f = open(self.file, 'rb')
+        session.storbinary("STOR " + self.file, f)
+        f.close()
+        session.quit()
+
+    def download(self):
+        session = self.create_session()
+        session.retrbinary("RETR " + self.file, open(self.file, 'wb').write)
+        session.quit()
 
 
 class Notification:
@@ -104,7 +129,7 @@ class ExtendedText:
         self.subreddit = subreddit
         s = r.get_subreddit(wikisr)
         try:
-            c = s.get_wiki_page("extxt/ " + subreddit.lower()).content_md
+            c = s.get_wiki_page("extxt/" + subreddit.lower()).content_md
             if c.startswith("!ignore"):
                 self.extxt = [""]
             else:
@@ -158,32 +183,6 @@ class Snapshill:
             if e.subreddit.lower() == subreddit.display_name.lower():
                 return e
         return self.extxt[0]
-
-class FTPSaver:
-
-    def __init__(self, file, folder, server, user, ftppass):
-        self.file = file
-        self.folder = folder
-        self.server = server
-        self.user = user
-        self.ftppass = ftppass
-
-    def create_session(self):
-        session = ftplib.FTP(self.server, self.user, self.ftppass)
-        session.cwd(self.folder)
-        return session
-
-    def upload(self):
-        session = self.create_session()
-        f = open(self.file, 'rb')
-        session.storbinary("STOR " + self.file, f)
-        f.close()
-        session.quit()
-
-    def download(self):
-        session = self.create_session()
-        session.retrbinary("RETR " + self.file, open(self.file, 'wb').write)
-        session.quit()
 
 
 u = FTPSaver(DB_FILE, "htdocs", os.environ.get("FTP_SRV"),
