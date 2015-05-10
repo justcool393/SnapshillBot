@@ -17,6 +17,8 @@ CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_SELF = os.environ.get('ARCHIVE_SELF') is "1"
 SUBMISSION_SCAN_COUNT = 10
 WAIT_TIME = 4 * 60
+USER = os.environ.get("REDDIT_USER")
+ARCHIVE_BOTS = [USER, "ttumblrbots"]
 
 archived = []
 user = os.environ['REDDIT_USER']
@@ -86,9 +88,7 @@ def archive_submissions(r, count, delay):
 def check_commented(s):
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
-        if c.author is None:
-            continue
-        if c.author.name == user:
+        if c.author and c.author.name.lower() in ARCHIVE_BOTS:
             return True
     return False
 
