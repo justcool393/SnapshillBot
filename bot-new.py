@@ -141,7 +141,7 @@ def setup_logging():
 def get_extra_text(r, subreddit):
     s = r.get_subreddit("SnapshillBot")
     p_all = s.get_wiki_page("extxt/all")
-    if not p_all.starts_with("!ignore"):
+    if not p_all.content_md.starts_with("!ignore"):
         return random.choice(parse_page(p_all.content_md))
 
     try:
