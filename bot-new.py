@@ -104,7 +104,7 @@ class ExtendedText:
         self.subreddit = subreddit
         s = r.get_subreddit(wikisr)
         try:
-            c = s.get_wiki_page("extxt/ " + subreddit.lower()).contend_md
+            c = s.get_wiki_page("extxt/ " + subreddit.lower()).content_md
             if c.startswith("!ignore"):
                 self.extxt = [""]
             else:
