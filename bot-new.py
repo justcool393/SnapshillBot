@@ -138,7 +138,7 @@ class Snapshill:
         for submission in submissions:
             if submission.is_self and not ARCHIVE_SELF:
                 continue
-            n = Notification(submission, get_ext(submission.subreddit),
+            n = Notification(submission, self._get_ext(submission.subreddit),
                              [archive(submission.url)])
             if n.should_notify():
                 n.notify()
@@ -153,6 +153,10 @@ class Snapshill:
     def _login(self):
         r.login(self.username, self.password)
 
+    def _get_ext(self, subreddit):
+        for e in self.extxt:
+            if e.subreddit == subreddit:
+                return e
 
 class FTPSaver:
 
