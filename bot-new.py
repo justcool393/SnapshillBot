@@ -9,6 +9,10 @@ import time
 import traceback
 import urllib
 
+from urllib.request import urlopen
+
+from urllib.parse import urlencode
+
 # Requests' exceptions live in .exceptions and are called errors.
 from requests.exceptions import ConnectionError, HTTPError
 # Praw's exceptions live in .errors and are called exceptions.
@@ -57,7 +61,7 @@ def get_archive_link(data):
 
 def archive(url):
     pairs = {"url": url}
-    res = urllib.urlopen("https://archive.is/submit/", urllib.urlencode(pairs))
+    res = urlopen("https://archive.is/submit/", urlencode(pairs))
     return get_archive_link(res.read())
 
 
