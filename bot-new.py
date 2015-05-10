@@ -93,7 +93,7 @@ class Notification:
         parts.append("Snapshots:")
         count = 0
         for l in self.links:
-            parts.append("* [Link " + count + "](" + l + ")")
+            parts.append("* [Link " + str(count) + "](" + l + ")")
             count += 1
 
         parts.append(get_footer())
