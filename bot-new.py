@@ -51,8 +51,8 @@ def should_notify(s):
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
         if c.author and c.author.name.lower() in ARCHIVE_BOTS:
-            return True
-    return False
+            return False
+    return True
 
 
 def get_archive_link(data):
