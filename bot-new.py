@@ -21,12 +21,11 @@ USER = os.environ.get("REDDIT_USER")
 ARCHIVE_BOTS = [USER, "ttumblrbots"]
 
 archived = []
-user = os.environ['REDDIT_USER']
 
 
 def main():
     r = praw.Reddit(USER_AGENT, domain=REDDIT_DOMAIN)
-    r.login(user, os.environ.get("REDDIT_PASS"))
+    r.login(USER, os.environ.get("REDDIT_PASS"))
     logging.info("Logged in and started post archiving.")
     add_archived(r)
 
@@ -75,7 +74,7 @@ def archive_submissions(r, count, delay):
             continue
 
         try:
-            if archive_and_post(submission):
+            if archive_and_post(r, submission):
                 archived_posts += 1
                 archived.append(submission.id)
         except UnicodeEncodeError:
@@ -97,11 +96,11 @@ def get_archive_link(data):
     return re.findall("http[s]?://archive.is/[0-z]{1,6}", data)[0]
 
 
-def archive_and_post(s):
+def archive_and_post(r, s):
     if s.is_self and not ARCHIVE_SELF:
         return False
     arch_post = archive(s.url)
-    return post(s, arch_post)
+    return post(r, s, arch_post)
 
 def archive_self(s):
     pass
@@ -112,9 +111,9 @@ def archive(url):
     return get_archive_link(res.read())
 
 
-def post(s, archive_link):
+def post(r, s, archive_link):
     comment = """
-Automatically archived [here]({link}). {quip}
+Automatically archived [here]({link}). {extxt}
 
 *^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({contact}))*
 """
@@ -122,20 +121,12 @@ Automatically archived [here]({link}). {quip}
     try:
         s.add_comment(
             comment.format(link=archive_link, info=INFO, contact=CONTACT,
-                           quip=get_quip(s.subreddit)))
+                           quip=get_extra_text(r, s.subreddit)))
     except Exception as ex:
         logging.error("Error adding comment (Submission ID: " + str(s.id) + ")")
         logging.error(str(ex))
         return False
     return True
-
-def get_quip(subreddit):
-    subreddit = subreddit.display_name
-    if subreddit == "SubredditDrama":
-        return "Just helping out ttumblrbots until they get back. Here is [" \
-               "some dogs](http://www.omfgdogs.com) (seizure warning) while " \
-               "we wait..."
-    return ""
 
 
 def setup_logging():
@@ -144,8 +135,23 @@ def setup_logging():
     logging.getLogger("requests").setLevel(logging.WARNING)
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
-
     root.addHandler(ch)
+
+
+def get_extra_text(r, subreddit):
+    s = r.get_subreddit("SnapshillBot")
+    p_all = s.get_wiki_page("extxt/all")
+    if not p_all.starts_with("!ignore"):
+        return random.choice(parse_page(p_all.content_md))
+
+    try:
+        p_sub = s.get_wiki_page("extxt/" + subreddit.display_name.lower())
+    except requests.exceptions.HTTPError:
+        return ""
+    return random.choice(parse_page(p_sub.content_md))
+
+def parse_page(data):
+    return data.split("\n----\n")
 
 
 def log_crash(e):
