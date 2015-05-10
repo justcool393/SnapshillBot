@@ -40,6 +40,8 @@ logging.basicConfig(level=loglevel,
 log = logging.getLogger("snapshill")
 logging.getLogger("requests").setLevel(loglevel)
 
+r = praw.Reddit(USER_AGENT, domain=REDDIT_DOMAIN)
+
 def get_footer():
     return "*^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({" \
            "contact}))*".format(info=INFO, contact=CONTACT)
