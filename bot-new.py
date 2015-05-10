@@ -1,8 +1,10 @@
+import ftplib
 import logging
 import os
 import praw
 import re
 import random
+import sqlite3
 import time
 import traceback
 import urlparse
@@ -10,81 +12,40 @@ import urllib2
 import urllib
 import sys
 
+# Requests' exceptions live in .exceptions and are called errors.
+from requests.exceptions import ConnectionError, HTTPError
+# Praw's exceptions live in .errors and are called exceptions.
+from praw.errors import APIException, ClientException, RateLimitExceeded
+
 USER_AGENT = "Archives to archive.is (/u/justcool393) v1.1"
 REDDIT_DOMAIN = "api.reddit.com"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_SELF = os.environ.get('ARCHIVE_SELF') is "1"
 SUBMISSION_SCAN_COUNT = 10
-WAIT_TIME = 4 * 60
-USER = os.environ.get("REDDIT_USER")
-ARCHIVE_BOTS = [USER, "ttumblrbots"]
+ARCHIVE_BOTS = ["snapshillbot", "ttumblrbots"]
+DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
 
-archived = []
+RECOVERABLE_EXC = (ConnectionError,
+                   HTTPError,
+                   APIException,
+                   ClientException,
+                   RateLimitExceeded)
 
+loglevel = LogLevel.INFO
 
-def main():
-    r = praw.Reddit(USER_AGENT, domain=REDDIT_DOMAIN)
-    r.login(USER, os.environ.get("REDDIT_PASS"))
-    logging.info("Logged in and started post archiving.")
-    add_archived(r)
+logging.basicConfig(level=loglevel,
+                    format="[%(asctime)s] [%(levelname)s] %(message)s")
 
-    check_at = 3600
-    last_checked = 0
-    times_zero = 1
+log = logging.getLogger("snapshill")
+logging.getLogger("requests").setLevel(loglevel)
 
-    arch = archive_submissions(r, 50, 0)
-    # Check the last 50 posts on startup
-    while True:
-        if time.time() - last_checked > check_at:
-            last_checked = time.time()
-            if arch == 0:
-                times_zero += 1
-            else:
-                logging.info("Last " + str((check_at * times_zero) / 60)
-                             + "min: " + str(arch))
-
-                arch = 0
-                times_zero = 1
-
-        arch += archive_submissions(r, SUBMISSION_SCAN_COUNT, WAIT_TIME)
+def get_footer():
+    return "*^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({" \
+           "contact}))*".format(info=INFO, contact=CONTACT)
 
 
-def add_archived(r):
-    for c in r.user.get_comments(sort='new', limit=None):
-        pid = c.parent_id
-        if pid is None or pid in archived:
-            continue
-        archived.append(pid)
-
-
-def archive_submissions(r, count, delay):
-    archived_posts = 0
-
-    for submission in r.get_new(limit=count):
-        if submission.id in archived:
-            continue
-
-        submission.replace_more_comments(limit=None, threshold=0)
-
-        commented = check_commented(submission)
-
-        if commented:
-            archived.append(submission.id)
-            continue
-
-        try:
-            if archive_and_post(r, submission):
-                archived_posts += 1
-                archived.append(submission.id)
-        except UnicodeEncodeError:
-            logging.error("Error (UEE): Submission ID: " + submission.id + ")")
-
-    time.sleep(delay)
-    return archived_posts
-
-
-def check_commented(s):
+def should_notify(s):
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
         if c.author and c.author.name.lower() in ARCHIVE_BOTS:
@@ -96,77 +57,162 @@ def get_archive_link(data):
     return re.findall("http[s]?://archive.is/[0-z]{1,6}", data)[0]
 
 
-def archive_and_post(r, s):
-    if s.is_self and not ARCHIVE_SELF:
-        return False
-    arch_post = archive(s.url)
-    return post(r, s, arch_post)
-
-def archive_self(s):
-    pass
-
 def archive(url):
     pairs = {"url": url}
     res = urllib2.urlopen("https://archive.is/submit/", urllib.urlencode(pairs))
     return get_archive_link(res.read())
 
 
-def post(r, s, archive_link):
-    comment = """
-Automatically archived [here]({link}). {extxt}
 
-*^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({contact}))*
-"""
-
-    try:
-        s.add_comment(
-            comment.format(link=archive_link, info=INFO, contact=CONTACT,
-                           quip=get_extra_text(r, s.subreddit)))
-    except Exception as ex:
-        logging.error("Error adding comment (Submission ID: " + str(s.id) + ")")
-        logging.error(str(ex))
-        return False
-    return True
+def log_error(e):
+    log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
+                                          traceback.format_exc()))
 
 
-def setup_logging():
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO)
-    root.addHandler(ch)
+class Notification:
+
+    def __init__(self, post, ext, links):
+        self.post = post
+        self.ext = ext
+        self.links = links
+
+    def should_notify(self):
+        query = "SELECT * FROM links WHERE id=?", (self.post.name,)
+        cur.execute(query)
+        return False if cur.fetchone() else True
+
+    def notify(self):
+        c = self.post.add_comment(_build())
+        cur.execute("INSERT INTO links (id, reply) VALUES (?, ?)",
+                    (submission.name, c.name))
+
+    def _build(self):
+        parts.append([ext.get()])
+        parts.append("Snapshots:")
+        count = 0
+        for l in self.links:
+            parts.append("* [Link " + count + "](" + l + ")")
+            count += 1
+
+        parts.append(get_footer())
+        return "\n\n".join(parts)
+
+class ExtendedText:
+
+    def __init__(self, r, wikisr, subreddit):
+        self.subreddit = subreddit
+        s = r.get_subreddit(wikisr)
+        try:
+            c = s.get_wiki_page("extxt/ " + subreddit.lower()).contend_md
+            if c.startswith("!ignore"):
+                self.extxt = [""]
+            else:
+                self.extxt = page.content_md.split("\n----\n")
+        except RECOVERABLE_EXC:
+            self.extxt = [""]
+
+    def get(self):
+        return random.choice(self.extxt)
 
 
-def get_extra_text(r, subreddit):
-    s = r.get_subreddit("SnapshillBot")
-    p_all = s.get_wiki_page("extxt/all")
-    if not p_all.content_md.startswith("!ignore"):
-        return random.choice(parse_page(p_all.content_md))
+class Snapshill:
 
-    try:
-        p_sub = s.get_wiki_page("extxt/" + subreddit.display_name.lower())
-    except requests.exceptions.HTTPError:
-        return ""
-    return random.choice(parse_page(p_sub.content_md))
+    def __init__(self, username, password, wikisr, limit=25):
+        self.username = username
+        self.password = password
+        self.limit = limit
+        self.wikisr = wikisr
+        self.extxt = []
+        self._setup = False
 
-def parse_page(data):
-    return data.split("\n----\n")
+    def run(self):
+        """
+        TODO: Add comments
+        """
+        if not self._setup:
+            raise Exception("Snapshiller not ready yet!")
+
+        submissions = r.get_new(limit=self.limit)
+
+        for submission in submissions:
+            if submission.is_self and not ARCHIVE_SELF:
+                continue
+            n = Notification(submission, get_ext(submission.subreddit),
+                             [archive(submission.url)])
+            if n.should_notify():
+                n.notify()
+
+    def setup(self):
+        self._login()
+        for s in r.get_my_subreddits():
+            self.extxt.append(ExtendedText(r, self.wikisr, s.display_name))
+
+        self._setup = True
+
+    def _login(self):
+        r.login(self.username, self.pasword)
 
 
-def log_crash(e):
-    logging.error("Error occurred in the bot restarting in 15 seconds...")
-    logging.error("Details: " + str(e))
-    traceback.print_exc()
-    time.sleep(15)
-    sys.exit(1)  # Signal to the host that we crashed
+class FTPSaver:
+
+    def __init__(self, file, folder, server, user, ftppass):
+        self.file = file
+        self.folder = folder
+        self.server = server
+        self.user = user
+        self.ftppass = ftppass
+
+    def create_session(self):
+        session = ftplib.FTP(self.server, self.user, self.ftppass)
+        session.cwd(self.folder)
+        return session
+
+    def upload(self):
+        session = self.create_session()
+        f = open(self.file, 'rb')
+        session.storbinary("STOR " + self.file, f)
+        f.close()
+        session.quit()
+
+    def download(self):
+        session = self.create_session()
+        session.retrbinary("RETR " + self.file, open(self.file, 'wb').write)
+        session.quit()
 
 
-try:
+u = FTPSaver(DB_FILE, "htdocs", os.environ.get("FTP_SRV"),
+             os.environ.get("FTP_USER"), os.environ.get("FTP_PASS"))
+
+u.download() # Download
+
+db = sqlite3.connect(DB_FILE)
+cur = db.cursor()
+
+if __name__ == "__main__":
     setup_logging()
-    main()
-except (NameError, SyntaxError, AttributeError) as e:
-    logging.error(str(e))
-    time.sleep(86400)  # Sleep for 1 day so we don't restart.
-except Exception as e:
-    log_crash(e)
+    username = os.environ.get("REDDIT_USER")
+    password = os.environ.get("REDDIT_PASS")
+    limit = int(os.environ.get("LIMIT", 25))
+    wait = int(os.environ.get("WAIT", 60*3))
+    save_cycle = int(os.environ.get("SAVE_CYCLE", 20))
+
+    b = Snapshill(username, password, limit)
+    try:
+        cycles = 0
+        while True:
+            try:
+                b.run()
+            except RECOVERABLE_EXC as e:
+                log_error(e)
+
+            time.sleep(wait)
+            cycles += 1
+            if cycles >= save_cycle:
+                u.upload()
+                cycles = 0
+    except KeyboardInterrupt:
+        pass
+    b.quit()
+    db.close()
+    u.upload()
+    exit(0)
