@@ -63,7 +63,7 @@ def archive(url):
     pairs = {"url": url}
     res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
         'ascii'))
-    return get_archive_link(res.read())
+    return get_archive_link(res.read().decode('ascii'))
 
 
 
