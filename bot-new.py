@@ -78,8 +78,7 @@ class Notification:
         self.links = links
 
     def should_notify(self):
-        query = "SELECT * FROM links WHERE id=?", (self.post.name,)
-        cur.execute(query)
+        cur.execute("SELECT * FROM links WHERE id=?", (self.post.name,))
         return False if cur.fetchone() else True
 
     def notify(self):
