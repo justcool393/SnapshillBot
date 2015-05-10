@@ -124,7 +124,7 @@ class Snapshill:
         self.password = password
         self.limit = limit
         self.wikisr = wikisr
-        self.extxt = []
+        self.extxt = [ExtendedText(wikisr, "all")]
         self._setup = False
 
     def run(self):
@@ -158,6 +158,7 @@ class Snapshill:
         for e in self.extxt:
             if e.subreddit == subreddit:
                 return e
+        return self.extxt[0]
 
 class FTPSaver:
 
