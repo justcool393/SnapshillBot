@@ -100,7 +100,7 @@ class Notification:
 
 class ExtendedText:
 
-    def __init__(self, r, wikisr, subreddit):
+    def __init__(self, wikisr, subreddit):
         self.subreddit = subreddit
         s = r.get_subreddit(wikisr)
         try:
@@ -146,7 +146,7 @@ class Snapshill:
     def setup(self):
         self._login()
         for s in r.get_my_subreddits():
-            self.extxt.append(ExtendedText(r, self.wikisr, s.display_name))
+            self.extxt.append(ExtendedText(self.wikisr, s.display_name))
 
         self._setup = True
 
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     wait = int(os.environ.get("WAIT", 60*3))
     save_cycle = int(os.environ.get("SAVE_CYCLE", 20))
 
-    b = Snapshill(username, password, limit)
+    b = Snapshill(username, password, "SnapshillBot", limit)
     b.setup()
     try:
         cycles = 0
