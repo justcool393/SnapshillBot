@@ -104,6 +104,10 @@ def archive_and_post(s):
     return post(s, arch_post)
 
 
+def archive_self(s):
+    
+
+
 def archive(url):
     pairs = {"url": url}
     res = urllib2.urlopen("https://archive.is/submit/", urllib.urlencode(pairs))
@@ -120,7 +124,7 @@ Automatically archived [here]({link}). {quip}
     try:
         s.add_comment(
             comment.format(link=archive_link, info=INFO, contact=CONTACT,
-                           quip=""))
+                           quip=get_quip(s.subreddit)))
     except Exception as ex:
         logging.error("Error adding comment (Submission ID: " + str(s.id) + ")")
         logging.error(str(ex))
@@ -128,7 +132,11 @@ Automatically archived [here]({link}). {quip}
     return True
 
 def get_quip(subreddit):
-    pass # TODO: Implement
+    subreddit = subreddit.display_name
+    if subreddit == "SubredditDrama":
+        return "Just helping out ttumblrbots until they get back. Here is [" \
+               "some dogs](http://www.omfgdogs.com) while we wait..."
+    return ""
 
 
 def setup_logging():
