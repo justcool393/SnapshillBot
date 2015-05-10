@@ -197,6 +197,7 @@ if __name__ == "__main__":
     save_cycle = int(os.environ.get("SAVE_CYCLE", 20))
 
     b = Snapshill(username, password, limit)
+    b.setup()
     try:
         cycles = 0
         while True:
