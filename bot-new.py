@@ -190,7 +190,6 @@ db = sqlite3.connect(DB_FILE)
 cur = db.cursor()
 
 if __name__ == "__main__":
-    setup_logging()
     username = os.environ.get("REDDIT_USER")
     password = os.environ.get("REDDIT_PASS")
     limit = int(os.environ.get("LIMIT", 25))
