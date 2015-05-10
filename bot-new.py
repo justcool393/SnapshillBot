@@ -133,7 +133,8 @@ def get_quip(subreddit):
     subreddit = subreddit.display_name
     if subreddit == "SubredditDrama":
         return "Just helping out ttumblrbots until they get back. Here is [" \
-               "some dogs](http://www.omfgdogs.com) while we wait..."
+               "some dogs](http://www.omfgdogs.com) (seizure warning) while " \
+               "we wait..."
     return ""
 
 
