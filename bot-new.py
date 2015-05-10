@@ -7,10 +7,7 @@ import random
 import sqlite3
 import time
 import traceback
-import urlparse
-import urllib2
 import urllib
-import sys
 
 # Requests' exceptions live in .exceptions and are called errors.
 from requests.exceptions import ConnectionError, HTTPError
@@ -60,7 +57,7 @@ def get_archive_link(data):
 
 def archive(url):
     pairs = {"url": url}
-    res = urllib2.urlopen("https://archive.is/submit/", urllib.urlencode(pairs))
+    res = urllib.urlopen("https://archive.is/submit/", urllib.urlencode(pairs))
     return get_archive_link(res.read())
 
 
@@ -82,12 +79,12 @@ class Notification:
         return False if cur.fetchone() else True
 
     def notify(self):
-        c = self.post.add_comment(_build())
+        c = self.post.add_comment(self._build())
         cur.execute("INSERT INTO links (id, reply) VALUES (?, ?)",
-                    (submission.name, c.name))
+                    (self.post.name, c.name))
 
     def _build(self):
-        parts.append([ext.get()])
+        parts = [self.ext.get()]
         parts.append("Snapshots:")
         count = 0
         for l in self.links:
@@ -107,7 +104,7 @@ class ExtendedText:
             if c.startswith("!ignore"):
                 self.extxt = [""]
             else:
-                self.extxt = page.content_md.split("\n----\n")
+                self.extxt = c.split("\n----\n")
         except RECOVERABLE_EXC:
             self.extxt = [""]
 
