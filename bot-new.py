@@ -165,7 +165,7 @@ class Snapshill:
                 continue
             n = Notification(submission, self._get_ext(submission.subreddit),
                              [archive(submission.url)])
-            if n.should_notify():
+            if n.should_notify() and should_notify(submission):
                 n.notify()
 
     def setup(self):
