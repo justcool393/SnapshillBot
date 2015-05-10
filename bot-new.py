@@ -133,7 +133,7 @@ class ExtendedText:
             if c.startswith("!ignore"):
                 self.extxt = [""]
             else:
-                self.extxt = c.split("\n----\n")
+                self.extxt = c.split("\r\n----\r\n")
         except RECOVERABLE_EXC:
             self.extxt = [""]
 
