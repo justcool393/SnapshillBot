@@ -151,7 +151,7 @@ class Snapshill:
         self._setup = True
 
     def _login(self):
-        r.login(self.username, self.pasword)
+        r.login(self.username, self.password)
 
 
 class FTPSaver:
