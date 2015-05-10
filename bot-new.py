@@ -103,10 +103,8 @@ def archive_and_post(s):
     arch_post = archive(s.url)
     return post(s, arch_post)
 
-
 def archive_self(s):
-    
-
+    pass
 
 def archive(url):
     pairs = {"url": url}
