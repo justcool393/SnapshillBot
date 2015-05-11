@@ -7,7 +7,6 @@ import random
 import sqlite3
 import time
 import traceback
-import urllib
 
 from urllib.request import urlopen
 
@@ -22,7 +21,6 @@ USER_AGENT = "Archives to archive.is (/u/justcool393) v1.1"
 REDDIT_DOMAIN = "api.reddit.com"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
-ARCHIVE_SELF = os.environ.get('ARCHIVE_SELF') is "1"
 ARCHIVE_BOTS = ["snapshillbot", "ttumblrbots"]
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
 
@@ -65,6 +63,27 @@ def archive(url):
         'ascii'))
     return get_archive_link(res.read().decode('ascii'))
 
+# # # Stolen from /u/redditbots source code # # #
+
+def isredditlink(link):
+    return re.findall(r'https?://([a-z0-9-]+\.)*reddit\.com(/.*)?', link) != []
+
+
+def extractlinks_self(htmltext):
+    linklist = []
+    links = re.findall(r'(?<=href=")([^"]+)"&gt;(.*?)\b&lt;',htmltext)
+    if len(links) == 0:
+        return linklist
+
+    for link in links:
+        link = list(link)
+        if link[0][:1] == '/':
+            link[0] = 'http://www.reddit.com'+link[0]
+        if isredditlink(link[0]):
+            linklist.append(link)
+    return linklist
+
+# # # End code taken # # #
 
 
 def log_error(e):
@@ -123,6 +142,7 @@ class Notification:
         parts.append(get_footer())
         return "\n\n".join(parts)
 
+
 class ExtendedText:
 
     def __init__(self, wikisr, subreddit):
@@ -161,8 +181,9 @@ class Snapshill:
         submissions = r.get_new(limit=self.limit)
 
         for submission in submissions:
-            if submission.is_self and not ARCHIVE_SELF:
-                continue
+            archives = [archive(submission.url)]
+            if submission.is_self:
+                archives.extend(extractlinks_self(submission.selftext_html))
             n = Notification(submission, self._get_ext(submission.subreddit),
                              [archive(submission.url)])
             if n.should_notify() and should_notify(submission):
