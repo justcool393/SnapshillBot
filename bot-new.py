@@ -56,7 +56,14 @@ def should_notify(s):
 
 
 def get_archive_link(data):
-    return re.findall("http[s]?://archive.is/[0-z]{1,6}", data)[0]
+    a = re.findall("http[s]?://archive.is/[0-z]{1,6}", data)
+    if len(a) < 1: return False
+    return a[0]
+
+
+def create_archive_link(url):
+    pairs = {"url": url, "run": '1'}
+    return "https://archive.is/?run=1&url=" + urlencode(pairs)
 
 
 def archive(url):
@@ -98,10 +105,11 @@ class FTPSaver:
 
 class Notification:
 
-    def __init__(self, post, ext, links):
+    def __init__(self, post, ext, links, originals):
         self.post = post
         self.ext = ext
         self.links = links
+        self.originals = originals
 
     def should_notify(self):
         cur.execute("SELECT * FROM links WHERE id=?", (self.post.name,))
@@ -117,9 +125,17 @@ class Notification:
         count = 1
         for l in self.links:
             msg = "Link " + str(count)
-            if count == 1 and self.post.is_self:
-                msg = "*This Post*"
-            parts.append("* [" + msg + "](" + l + ")")
+            if self.post.is_self:
+                if count == 1:
+                    msg = "*This Post*"
+                else:
+                    msg = "Link " + str(count - 1)
+            if l is False:
+                parts.append("* *Error archiving ([archive manually?]("
+                             + create_archive_link(self.originals[l - 1])
+                             + "))*")
+            else:
+                parts.append("* [" + msg + "](" + l + ")")
             count += 1
 
         parts.append(get_footer())
@@ -165,13 +181,15 @@ class Snapshill:
 
         for submission in submissions:
             archives = [archive(submission.url)]
+            originals = [submission.url]
             if submission.is_self and submission.selftext_html is not None:
                 soup = BeautifulSoup(unescape(submission.selftext_html))
                 for anchor in soup.find_all('a'):
                     url = anchor['href']
                     archives.append(archive(url))
+                    originals.append(url)
             n = Notification(submission, self._get_ext(submission.subreddit),
-                             [archive(submission.url)])
+                             archives, originals)
             if n.should_notify() and should_notify(submission):
                 n.notify()
 
