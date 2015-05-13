@@ -1,1 +1,2 @@
 praw==2.1.21
+beautifulsoup4==4.3.2

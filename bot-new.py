@@ -8,9 +8,11 @@ import sqlite3
 import time
 import traceback
 
+from bs4 import BeautifulSoup
+from html.parser import unescape
 from urllib.request import urlopen
-
 from urllib.parse import urlencode
+from urllib.parse import urlparse
 
 # Requests' exceptions live in .exceptions and are called errors.
 from requests.exceptions import ConnectionError, HTTPError
@@ -63,28 +65,6 @@ def archive(url):
         'ascii'))
     return get_archive_link(res.read().decode('ascii'))
 
-# # # Stolen from /u/redditbots source code # # #
-
-def isredditlink(link):
-    return re.findall(r'https?://([a-z0-9-]+\.)*reddit\.com(/.*)?', link) != []
-
-
-def extractlinks_self(htmltext):
-    linklist = []
-    links = re.findall(r'(?<=href=")([^"]+)"&gt;(.*?)\b&lt;',htmltext)
-    if len(links) == 0:
-        return linklist
-
-    for link in links:
-        link = list(link)
-        if link[0][:1] == '/':
-            link[0] = 'http://www.reddit.com'+link[0]
-        if isredditlink(link[0]):
-            linklist.append(link)
-    return linklist
-
-# # # End code taken # # #
-
 
 def log_error(e):
     log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
@@ -136,7 +116,10 @@ class Notification:
         parts = [self.ext.get(), "Snapshots:"]
         count = 1
         for l in self.links:
-            parts.append("* [Link " + str(count) + "](" + l + ")")
+            msg = "Link " + str(count)
+            if count == 1 and self.post.is_self:
+                msg = "*This Post*"
+            parts.append("* [" + msg + "](" + l + ")")
             count += 1
 
         parts.append(get_footer())
@@ -182,8 +165,11 @@ class Snapshill:
 
         for submission in submissions:
             archives = [archive(submission.url)]
-            if submission.is_self:
-                archives.extend(extractlinks_self(submission.selftext_html))
+            if submission.is_self and submission.selftext_html is not None:
+                soup = BeautifulSoup(unescape(submission.selftext_html))
+                for anchor in soup.find_all('a'):
+                    url = anchor['href']
+                    archives.append(archive(url))
             n = Notification(submission, self._get_ext(submission.subreddit),
                              [archive(submission.url)])
             if n.should_notify() and should_notify(submission):
