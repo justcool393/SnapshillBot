@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 from html.parser import unescape
 from urllib.request import urlopen
 from urllib.parse import urlencode
-from urllib.parse import urlparse
 
 # Requests' exceptions live in .exceptions and are called errors.
 from requests.exceptions import ConnectionError, HTTPError
@@ -76,31 +75,6 @@ def archive(url):
 def log_error(e):
     log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
                                           traceback.format_exc()))
-class FTPSaver:
-
-    def __init__(self, file, folder, server, user, ftppass):
-        self.file = file
-        self.folder = folder
-        self.server = server
-        self.user = user
-        self.ftppass = ftppass
-
-    def create_session(self):
-        session = ftplib.FTP(self.server, self.user, self.ftppass)
-        session.cwd(self.folder)
-        return session
-
-    def upload(self):
-        session = self.create_session()
-        f = open(self.file, 'rb')
-        session.storbinary("STOR " + self.file, f)
-        f.close()
-        session.quit()
-
-    def download(self):
-        session = self.create_session()
-        session.retrbinary("RETR " + self.file, open(self.file, 'wb').write)
-        session.quit()
 
 
 class Notification:
@@ -192,6 +166,7 @@ class Snapshill:
                              archives, originals)
             if n.should_notify() and should_notify(submission):
                 n.notify()
+            db.commit()
 
     def setup(self):
         self._login()
@@ -210,11 +185,6 @@ class Snapshill:
         return self.extxt[0]
 
 
-u = FTPSaver(DB_FILE, "htdocs", os.environ.get("FTP_SRV"),
-             os.environ.get("FTP_USER"), os.environ.get("FTP_PASS"))
-
-u.download() # Download
-
 db = sqlite3.connect(DB_FILE)
 cur = db.cursor()
 
@@ -222,8 +192,7 @@ if __name__ == "__main__":
     username = os.environ.get("REDDIT_USER")
     password = os.environ.get("REDDIT_PASS")
     limit = int(os.environ.get("LIMIT", 25))
-    wait = int(os.environ.get("WAIT", 60*3))
-    save_cycle = int(os.environ.get("SAVE_CYCLE", 20))
+    wait = int(os.environ.get("WAIT", 5))
 
     b = Snapshill(username, password, "SnapshillBot", limit)
     b.setup()
@@ -236,13 +205,8 @@ if __name__ == "__main__":
                 log_error(e)
 
             time.sleep(wait)
-            cycles += 1
-            if cycles >= save_cycle:
-                u.upload()
-                cycles = 0
     except KeyboardInterrupt:
         pass
     b.quit()
     db.close()
-    u.upload()
     exit(0)
