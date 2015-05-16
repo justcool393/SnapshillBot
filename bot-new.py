@@ -37,7 +37,7 @@ logging.basicConfig(level=loglevel,
                     format="[%(asctime)s] [%(levelname)s] %(message)s")
 
 log = logging.getLogger("snapshill")
-logging.getLogger("requests").setLevel(loglevel)
+logging.getLogger("requests").setLevel(logging.WARNING)
 
 r = praw.Reddit(USER_AGENT, domain=REDDIT_DOMAIN)
 
@@ -48,6 +48,7 @@ def get_footer():
 
 def should_notify(s):
     flat_comments = praw.helpers.flatten_tree(s.comments)
+    flat_comments.replace_more_comments(limit=500)
     for c in flat_comments:
         if c.author and c.author.name.lower() in ARCHIVE_BOTS:
             return False
@@ -70,6 +71,12 @@ def archive(url):
     res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
         'ascii'))
     return get_archive_link(res.read().decode('ascii'))
+
+
+def fix_url(url):
+    if url.startswith("/r/") or url.startswith("/u/"):
+        url = "https://www.reddit.com" + url
+    return url
 
 
 def log_error(e):
@@ -159,12 +166,12 @@ class Snapshill:
             if submission.is_self and submission.selftext_html is not None:
                 soup = BeautifulSoup(unescape(submission.selftext_html))
                 for anchor in soup.find_all('a'):
-                    url = anchor['href']
+                    url = fix_url(anchor['href'])
                     archives.append(archive(url))
                     originals.append(url)
             n = Notification(submission, self._get_ext(submission.subreddit),
                              archives, originals)
-            if n.should_notify() and should_notify(submission):
+            if should_notify(submission) and n.should_notify():
                 n.notify()
             db.commit()
 
@@ -179,6 +186,9 @@ class Snapshill:
         r.login(self.username, self.password)
 
     def _get_ext(self, subreddit):
+        if len(self.extxt[0].extxt) > 0:
+            return self.extxt[0] # return the one for all if there are any
+
         for e in self.extxt:
             if e.subreddit.lower() == subreddit.display_name.lower():
                 return e
