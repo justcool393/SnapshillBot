@@ -47,8 +47,8 @@ def get_footer():
 
 
 def should_notify(s):
+    s.replace_more_comments()
     flat_comments = praw.helpers.flatten_tree(s.comments)
-    flat_comments.replace_more_comments(limit=500)
     for c in flat_comments:
         if c.author and c.author.name.lower() in ARCHIVE_BOTS:
             return False
