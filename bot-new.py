@@ -181,6 +181,10 @@ class Snapshill:
         self.refresh_extxt()
         self._setup = True
 
+    def quit(self):
+        self.extxt = []
+        self._setup = False
+
     def refresh_extxt(self):
         self.extxt = [ExtendedText(self.wikisr, "all")]
         for s in r.get_my_subreddits():
@@ -190,8 +194,8 @@ class Snapshill:
         r.login(self.username, self.password)
 
     def _get_ext(self, subreddit):
-        if len(self.extxt[0].extxt) != 1 or self.extxt[0].extxt != "":
-            return self.extxt[0]  # return 'all' one for announcements
+        if len(self.extxt[0].extxt) != 0:
+            return self.extxt[0].get()  # return 'all' one for announcements
 
         for ex in self.extxt:
             if ex.subreddit.lower() == subreddit.display_name.lower():
@@ -215,6 +219,7 @@ if __name__ == "__main__":
         cycles = 0
         while True:
             try:
+                cycles += 1
                 b.run()
                 # This will refresh by default around ~30 minutes (depending
                 # on delays).
