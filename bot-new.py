@@ -1,4 +1,3 @@
-import ftplib
 import logging
 import os
 import praw
@@ -69,8 +68,8 @@ def create_archive_link(url):
 def archive(url):
     pairs = {"url": url}
     res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
-        'ascii'))
-    return get_archive_link(res.read().decode('ascii'))
+        'utf-8'))
+    return get_archive_link(res.read().decode('utf-8'))
 
 
 def fix_url(url):
@@ -112,7 +111,8 @@ class Notification:
                 else:
                     msg = "Link " + str(count - 1)
             if l is False:
-                parts.append("* *Error archiving ([archive manually?]("
+                parts.append("* *Error archiving link" + str(count)
+                             + " ([archive manually?]("
                              + create_archive_link(self.originals[l - 1])
                              + "))*")
             else:
@@ -131,13 +131,14 @@ class ExtendedText:
         try:
             c = s.get_wiki_page("extxt/" + subreddit.lower()).content_md
             if c.startswith("!ignore"):
-                self.extxt = [""]
+                self.extxt = []
             else:
                 self.extxt = c.split("\r\n----\r\n")
         except RECOVERABLE_EXC:
-            self.extxt = [""]
+            self.extxt = []
 
     def get(self):
+        if len(self.extxt) == 0: return ""
         return random.choice(self.extxt)
 
 
@@ -181,7 +182,7 @@ class Snapshill:
         self._setup = True
 
     def refresh_extxt(self):
-        self.extxt = []
+        self.extxt = [ExtendedText(self.wikisr, "all")]
         for s in r.get_my_subreddits():
             self.extxt.append(ExtendedText(self.wikisr, s.display_name))
 
@@ -189,7 +190,7 @@ class Snapshill:
         r.login(self.username, self.password)
 
     def _get_ext(self, subreddit):
-        if len(self.extxt[0].extxt) > 0:
+        if len(self.extxt[0].extxt) != 1 or self.extxt[0].extxt != "":
             return self.extxt[0]  # return 'all' one for announcements
 
         for ex in self.extxt:
