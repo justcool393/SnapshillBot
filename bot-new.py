@@ -177,21 +177,24 @@ class Snapshill:
 
     def setup(self):
         self._login()
+        self.refresh_extxt()
+        self._setup = True
+
+    def refresh_extxt(self):
+        self.extxt = []
         for s in r.get_my_subreddits():
             self.extxt.append(ExtendedText(self.wikisr, s.display_name))
-
-        self._setup = True
 
     def _login(self):
         r.login(self.username, self.password)
 
     def _get_ext(self, subreddit):
         if len(self.extxt[0].extxt) > 0:
-            return self.extxt[0] # return the one for all if there are any
+            return self.extxt[0]  # return 'all' one for announcements
 
-        for e in self.extxt:
-            if e.subreddit.lower() == subreddit.display_name.lower():
-                return e
+        for ex in self.extxt:
+            if ex.subreddit.lower() == subreddit.display_name.lower():
+                return ex
         return self.extxt[0]
 
 
@@ -203,6 +206,7 @@ if __name__ == "__main__":
     password = os.environ.get("REDDIT_PASS")
     limit = int(os.environ.get("LIMIT", 25))
     wait = int(os.environ.get("WAIT", 5))
+    refresh = int(os.environ.get("REFRESH", 1800))
 
     b = Snapshill(username, password, "SnapshillBot", limit)
     b.setup()
@@ -211,6 +215,11 @@ if __name__ == "__main__":
         while True:
             try:
                 b.run()
+                # This will refresh by default around ~30 minutes (depending
+                # on delays).
+                if cycles > refresh / wait:
+                    b.refresh_extxt()
+                    cycles = 0
             except RECOVERABLE_EXC as e:
                 log_error(e)
 
