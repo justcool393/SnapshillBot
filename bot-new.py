@@ -6,6 +6,7 @@ import random
 import sqlite3
 import time
 import traceback
+import urllib.error
 
 from bs4 import BeautifulSoup
 from html.parser import unescape
@@ -40,6 +41,7 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 
 r = praw.Reddit(USER_AGENT, domain=REDDIT_DOMAIN)
 
+
 def get_footer():
     return "*^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({" \
            "contact}))*".format(info=INFO, contact=CONTACT)
@@ -56,19 +58,23 @@ def should_notify(s):
 
 def get_archive_link(data):
     a = re.findall("http[s]?://archive.is/[0-z]{1,6}", data)
-    if len(a) < 1: return False
+    if len(a) < 1:
+        return False
     return a[0]
 
 
 def create_archive_link(url):
     pairs = {"url": url, "run": '1'}
-    return "https://archive.is/?run=1&url=" + urlencode(pairs)
+    return "https://archive.is/?" + urlencode(pairs)
 
 
 def archive(url):
     pairs = {"url": url}
-    res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
-        'utf-8'))
+    try:
+        res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
+            'utf-8'))
+    except urllib.error.HTTPError:
+        return False
     return get_archive_link(res.read().decode('utf-8'))
 
 
@@ -96,7 +102,11 @@ class Notification:
         return False if cur.fetchone() else True
 
     def notify(self):
-        c = self.post.add_comment(self._build())
+        try:
+            c = self.post.add_comment(self._build())
+        except RECOVERABLE_EXC as e:
+            log_error(e)
+            return
         cur.execute("INSERT INTO links (id, reply) VALUES (?, ?)",
                     (self.post.name, c.name))
 
@@ -111,7 +121,7 @@ class Notification:
                 else:
                     msg = "Link " + str(count - 1)
             if l is False:
-                parts.append("* *Error archiving link" + str(count)
+                parts.append("* *Error archiving link " + str(count)
                              + " ([archive manually?]("
                              + create_archive_link(self.originals[l - 1])
                              + "))*")
@@ -149,7 +159,7 @@ class Snapshill:
         self.password = password
         self.limit = limit
         self.wikisr = wikisr
-        self.extxt = [ExtendedText(wikisr, "all")]
+        self.extxt = []
         self._setup = False
 
     def run(self):
@@ -195,11 +205,12 @@ class Snapshill:
 
     def _get_ext(self, subreddit):
         if len(self.extxt[0].extxt) != 0:
-            return self.extxt[0].get()  # return 'all' one for announcements
+            return self.extxt[0]  # return 'all' one for announcements
 
         for ex in self.extxt:
             if ex.subreddit.lower() == subreddit.display_name.lower():
                 return ex
+
         return self.extxt[0]
 
 
@@ -223,7 +234,7 @@ if __name__ == "__main__":
                 b.run()
                 # This will refresh by default around ~30 minutes (depending
                 # on delays).
-                if cycles > refresh / wait:
+                if cycles > (refresh / wait) / 2:
                     b.refresh_extxt()
                     cycles = 0
             except RECOVERABLE_EXC as e:
