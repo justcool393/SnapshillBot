@@ -24,6 +24,7 @@ INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_BOTS = ["snapshillbot", "ttumblrbots"]
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
+LEN_MAX = 20
 
 RECOVERABLE_EXC = (ConnectionError,
                    HTTPError,
@@ -56,26 +57,49 @@ def should_notify(s):
     return True
 
 
-def get_archive_link(data):
-    a = re.findall("http[s]?://archive.is/[0-z]{1,6}", data)
+def get_archive_link(data, archiveis):
+    if archiveis:
+        a = re.findall("http[s]?://archive.is/[0-z]{1,6}", data)
+    else:
+        # shh, don't tell anyone, it'll be okay
+        a = re.findall("(/web/[0-9]{14}/)(https?:\/\/)?([\da-z\.-]+)\.(["
+                       "a-z\.]{2,6})([\/\w \.-]*)*\/?/", data)
+        if len(a) >= 1:
+            a[0] = "".join(a[0])
+            return "https://web.archive.org" + a[0]
     if len(a) < 1:
         return False
     return a[0]
 
 
-def create_archive_link(url):
-    pairs = {"url": url, "run": '1'}
-    return "https://archive.is/?" + urlencode(pairs)
+def create_archive_link(url, archiveis):
+    if archiveis:
+        pairs = {"url": url, "run": '1'}
+        return "https://archive.is/?" + urlencode(pairs)
+    return "https://web.archive.org/save/" + url
 
 
-def archive(url):
-    pairs = {"url": url}
-    try:
-        res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
-            'utf-8'))
-    except urllib.error.HTTPError:
-        return False
-    return get_archive_link(res.read().decode('utf-8'))
+def archive(url, archiveis):
+    if archiveis:
+        pairs = {"url": url}
+        try:
+            res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
+                'utf-8'))
+        except urllib.error.HTTPError:
+            return False
+        except urllib.error.URLError:
+            return False
+        encoding = "utf-8"
+    else:
+        try:
+            res = urlopen("https://web.archive.org/save/" + url)
+        except urllib.error.HTTPError:
+            return False
+        except urllib.error.URLError:
+            return False
+        encoding = res.headers['content-type'].split('charset=')[-1]
+    return get_archive_link(res.read().decode(encoding), archiveis)
+
 
 
 def fix_url(url):
@@ -89,21 +113,45 @@ def log_error(e):
                                           traceback.format_exc()))
 
 
+class Archive:
+
+    def __init__(self, url, text, archiveis=None, archiveorg=None):
+        if archiveis is None:
+            archiveis = archive(url, True)
+        if archiveorg is None:
+            archiveorg = archive(url, False)
+        self.url = url
+        self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
+        self.archiveis = archiveis
+        self.archiveorg = archiveorg
+
+
 class Notification:
 
-    def __init__(self, post, ext, links, originals):
+    def __init__(self, post, ext, links):
         self.post = post
         self.ext = ext
         self.links = links
-        self.originals = originals
 
     def should_notify(self):
         cur.execute("SELECT * FROM links WHERE id=?", (self.post.name,))
-        return False if cur.fetchone() else True
+        return False if cur.fetchone() else should_notify(self.post)
 
     def notify(self):
         try:
-            c = self.post.add_comment(self._build())
+            comment = self._build()
+            if len(comment) > 9999:
+                link = self.post.permalink
+                submission = r.submit("SnapshillBotEx", "Archives for " + link,
+                                      text=comment[:39999])
+                submission.add_comment("The original submission can be found "
+                                       "here:\n\n" + link)
+                c = self.post.add_comment("Wow, that's a lot of links! The "
+                                          "snapshots can be [found here.](" +
+                                          submission.url + ")\n\n" + get_footer())
+                log.info("Posted a comment and new submission")
+            else:
+                c = self.post.add_comment(comment)
         except RECOVERABLE_EXC as e:
             log_error(e)
             return
@@ -113,20 +161,21 @@ class Notification:
     def _build(self):
         parts = [self.ext.get(), "Snapshots:"]
         count = 1
+        format = "{count}. {text} - [{aisnum}]({ais}), [{aorgnum}]({aorg})"
         for l in self.links:
-            msg = "Link " + str(count)
-            if self.post.is_self:
-                if count == 1:
-                    msg = "*This Post*"
-                else:
-                    msg = "Link " + str(count - 1)
-            if l is False:
-                parts.append("* *Error archiving link " + str(count)
-                             + " ([archive manually?]("
-                             + create_archive_link(self.originals[l - 1])
-                             + "))*")
-            else:
-                parts.append("* [" + msg + "](" + l + ")")
+            aisnum = "1"
+            aorgnum = "2"
+            if not l.archiveis:
+                aisnum = "Error"
+                l.archiveis = create_archive_link(l.url, True)
+
+            if not l.archiveorg:
+                aorgnum = "Error"
+                l.archiveorg = create_archive_link(l.url, False)
+
+            parts.append(format.format(count=str(count), text=l.text,
+                                       aisnum=aisnum, aorgnum=aorgnum,
+                                       ais=l.archiveis, aorg=l.archiveorg))
             count += 1
 
         parts.append(get_footer())
@@ -172,17 +221,17 @@ class Snapshill:
         submissions = r.get_new(limit=self.limit)
 
         for submission in submissions:
-            archives = [archive(submission.url)]
-            originals = [submission.url]
+            archives = [Archive(submission.url, "*This Post*")]
             if submission.is_self and submission.selftext_html is not None:
                 soup = BeautifulSoup(unescape(submission.selftext_html))
                 for anchor in soup.find_all('a'):
                     url = fix_url(anchor['href'])
-                    archives.append(archive(url))
-                    originals.append(url)
+                    archives.append(Archive(url, anchor.contents[0]))
+                if len(archives) == 1:
+                    continue
             n = Notification(submission, self._get_ext(submission.subreddit),
-                             archives, originals)
-            if should_notify(submission) and n.should_notify():
+                             archives)
+            if n.should_notify():
                 n.notify()
             db.commit()
 
