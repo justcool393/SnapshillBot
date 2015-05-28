@@ -23,6 +23,7 @@ REDDIT_DOMAIN = "api.reddit.com"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_BOTS = ["snapshillbot", "ttumblrbots"]
+ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
 LEN_MAX = 20
 
@@ -57,16 +58,8 @@ def should_notify(s):
     return True
 
 
-def get_archive_link(data, archiveis):
-    if archiveis:
-        a = re.findall("http[s]?://archive.is/[0-z]{1,6}", data)
-    else:
-        # shh, don't tell anyone, it'll be okay
-        a = re.findall("(/web/[0-9]{14}/)(https?:\/\/)?([\da-z\.-]+)\.(["
-                       "a-z\.]{2,6})([\/\w \.-]*)*\/?/", data)
-        if len(a) >= 1:
-            a[0] = "".join(a[0])
-            return "https://web.archive.org" + a[0]
+def get_archive_link(data):
+    a = re.findall("http[s]?://archive.is/[0-z]{1,6}", data)
     if len(a) < 1:
         return False
     return a[0]
@@ -92,13 +85,14 @@ def archive(url, archiveis):
         encoding = "utf-8"
     else:
         try:
-            res = urlopen("https://web.archive.org/save/" + url)
+            urlopen("https://web.archive.org/save/" + url)
         except urllib.error.HTTPError:
             return False
         except urllib.error.URLError:
             return False
-        encoding = res.headers['content-type'].split('charset=')[-1]
-    return get_archive_link(res.read().decode(encoding), archiveis)
+        date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
+        return "https://web.archive.org/" + date + "/" + url
+    return get_archive_link(res.read().decode(encoding))
 
 
 
