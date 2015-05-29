@@ -3,14 +3,13 @@ import os
 import praw
 import re
 import random
+import requests
 import sqlite3
 import time
 import traceback
-import urllib.error
 
 from bs4 import BeautifulSoup
 from html.parser import unescape
-from urllib.request import urlopen
 from urllib.parse import urlencode
 
 # Requests' exceptions live in .exceptions and are called errors.
@@ -22,7 +21,6 @@ USER_AGENT = "Archives to archive.is (/u/justcool393) v1.1"
 REDDIT_DOMAIN = "api.reddit.com"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
-ARCHIVE_BOTS = ["snapshillbot", "ttumblrbots"]
 ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
 LEN_MAX = 20
@@ -53,7 +51,7 @@ def should_notify(s):
     s.replace_more_comments()
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
-        if c.author and c.author.name.lower() in ARCHIVE_BOTS:
+        if c.author and c.author in r.get_friends() + r.user:
             return False
     return True
 
@@ -76,30 +74,26 @@ def archive(url, archiveis):
     if archiveis:
         pairs = {"url": url}
         try:
-            res = urlopen("https://archive.is/submit/", urlencode(pairs).encode(
-                'utf-8'))
-        except urllib.error.HTTPError:
-            return False
-        except urllib.error.URLError:
+            res = requests.post("https://archive.is/submit/", pairs)
+        except RECOVERABLE_EXC:
             return False
         encoding = "utf-8"
     else:
         try:
-            urlopen("https://web.archive.org/save/" + url)
-        except urllib.error.HTTPError:
-            return False
-        except urllib.error.URLError:
+            requests.get("https://web.archive.org/save/" + url)
+        except RECOVERABLE_EXC:
             return False
         date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
         return "https://web.archive.org/" + date + "/" + url
-    return get_archive_link(res.read().decode(encoding))
+    return get_archive_link(res.text.decode(encoding))
 
 
 
 def fix_url(url):
     if url.startswith("/r/") or url.startswith("/u/"):
         url = "https://www.reddit.com" + url
-    return url
+    return re.sub("https?://(([A-z]{2})(-[A-z]{2})?|beta|i|m|pay)"
+                  "\.?reddit\.com", "https://www.reddit.com", url)
 
 
 def log_error(e):
@@ -215,10 +209,17 @@ class Snapshill:
         submissions = r.get_new(limit=self.limit)
 
         for submission in submissions:
+            # Your crap posts aren't worth wasting precious CPU cycles and
+            # archive.is and archive.org's bandwith. HAIL ELLEN PAO
+            if submission.author and submission.author.name == "PoliticBot":
+                continue
+
             archives = [Archive(submission.url, "*This Post*")]
             if submission.is_self and submission.selftext_html is not None:
+                log.debug("Found text post...")
                 soup = BeautifulSoup(unescape(submission.selftext_html))
                 for anchor in soup.find_all('a'):
+                    log.debug("Found link in text post...")
                     url = fix_url(anchor['href'])
                     archives.append(Archive(url, anchor.contents[0]))
                 if len(archives) == 1:
@@ -274,10 +275,13 @@ if __name__ == "__main__":
         while True:
             try:
                 cycles += 1
+                log.debug("Running")
                 b.run()
+                log.debug("Done")
                 # This will refresh by default around ~30 minutes (depending
                 # on delays).
                 if cycles > (refresh / wait) / 2:
+                    log.info("Reloading header text...")
                     b.refresh_extxt()
                     cycles = 0
             except RECOVERABLE_EXC as e:
