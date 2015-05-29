@@ -15,7 +15,8 @@ from urllib.parse import urlencode
 # Requests' exceptions live in .exceptions and are called errors.
 from requests.exceptions import ConnectionError, HTTPError
 # Praw's exceptions live in .errors and are called exceptions.
-from praw.errors import APIException, ClientException, RateLimitExceeded
+from praw.errors import APIException, ClientException, RateLimitExceeded, \
+    InvalidCaptcha
 
 USER_AGENT = "Archives to archive.is and archive.org (/u/justcool393) v1.2"
 INFO = "/r/SnapshillBot"
@@ -28,7 +29,8 @@ RECOVERABLE_EXC = (ConnectionError,
                    HTTPError,
                    APIException,
                    ClientException,
-                   RateLimitExceeded)
+                   RateLimitExceeded,
+                   InvalidCaptcha)
 
 loglevel = logging.INFO
 
@@ -130,7 +132,8 @@ class Notification:
             if len(comment) > 9999:
                 link = self.post.permalink
                 submission = r.submit("SnapshillBotEx", "Archives for " + link,
-                                      text=comment[:39999])
+                                      text=comment[:39999],
+                                      raise_captcha_exception=True)
                 submission.add_comment("The original submission can be found "
                                        "here:\n\n" + link)
                 c = self.post.add_comment("Wow, that's a lot of links! The "
