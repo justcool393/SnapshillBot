@@ -76,15 +76,15 @@ def archive(url, archiveis):
             res = requests.post("https://archive.is/submit/", pairs)
         except RECOVERABLE_EXC:
             return False
-        encoding = "utf-8"
     else:
         try:
             requests.get("https://web.archive.org/save/" + url)
+            time.sleep(500)  # archive.org can't follow reddit API rules
         except RECOVERABLE_EXC:
             return False
         date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
         return "https://web.archive.org/" + date + "/" + url
-    return get_archive_link(res.text.decode(encoding))
+    return get_archive_link(res.text)
 
 
 
