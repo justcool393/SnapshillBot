@@ -17,8 +17,7 @@ from requests.exceptions import ConnectionError, HTTPError
 # Praw's exceptions live in .errors and are called exceptions.
 from praw.errors import APIException, ClientException, RateLimitExceeded
 
-USER_AGENT = "Archives to archive.is (/u/justcool393) v1.1"
-REDDIT_DOMAIN = "api.reddit.com"
+USER_AGENT = "Archives to archive.is and archive.org (/u/justcool393) v1.2"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
@@ -39,7 +38,7 @@ logging.basicConfig(level=loglevel,
 log = logging.getLogger("snapshill")
 logging.getLogger("requests").setLevel(logging.WARNING)
 
-r = praw.Reddit(USER_AGENT, domain=REDDIT_DOMAIN)
+r = praw.Reddit(USER_AGENT)
 
 
 def get_footer():
