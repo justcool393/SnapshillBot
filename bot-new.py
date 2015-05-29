@@ -41,6 +41,7 @@ log = logging.getLogger("snapshill")
 logging.getLogger("requests").setLevel(logging.WARNING)
 
 r = praw.Reddit(USER_AGENT)
+me = None
 
 
 def get_footer():
@@ -52,7 +53,7 @@ def should_notify(s):
     s.replace_more_comments()
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
-        if c.author and c.author in r.get_friends() + r.user:
+        if c.author and c.author in me.get_friends() + me:
             return False
     return True
 
@@ -248,6 +249,7 @@ class Snapshill:
 
     def _login(self):
         r.login(self.username, self.password)
+        me = r.user
 
     def _get_ext(self, subreddit):
         if len(self.extxt[0].extxt) != 0:
