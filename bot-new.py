@@ -53,7 +53,7 @@ def should_notify(s):
     s.replace_more_comments()
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
-        if c.author and c.author in me.get_friends() + me:
+        if c.author and (c.author == me or c.author in me.get_friends()):
             return False
     return True
 
