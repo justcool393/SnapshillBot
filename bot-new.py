@@ -249,7 +249,6 @@ class Snapshill:
 
     def _login(self):
         r.login(self.username, self.password)
-        me = r.user
 
     def _get_ext(self, subreddit):
         if len(self.extxt[0].extxt) != 0:
@@ -274,6 +273,7 @@ if __name__ == "__main__":
 
     b = Snapshill(username, password, "SnapshillBot", limit)
     b.setup()
+    me = r.user
     try:
         cycles = 0
         while True:
