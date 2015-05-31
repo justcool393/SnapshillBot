@@ -7,6 +7,7 @@ import requests
 import sqlite3
 import time
 import traceback
+import warnings
 
 from bs4 import BeautifulSoup
 from html.parser import unescape
@@ -22,8 +23,12 @@ USER_AGENT = "Archives to archive.is and archive.org (/u/justcool393) v1.2"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
+MEGALODON_JP_FORMAT = "%Y-%m%d-%H%M-%S"
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
-LEN_MAX = 20
+LEN_MAX = 35
+REDDIT_API_WAIT = 2
+# we have to do some manual ratelimiting because we are tunnelling through
+# some other websites.
 
 RECOVERABLE_EXC = (ConnectionError,
                    HTTPError,
@@ -39,6 +44,7 @@ logging.basicConfig(level=loglevel,
 
 log = logging.getLogger("snapshill")
 logging.getLogger("requests").setLevel(logging.WARNING)
+warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
 r = praw.Reddit(USER_AGENT)
 me = None
@@ -50,6 +56,13 @@ def get_footer():
 
 
 def should_notify(s):
+    """
+    Looks for other snapshot bot comments in the comment chain and doesn't
+    post if they do.
+    :param s: Submission to check
+    :return: If we should comment or not
+    """
+
     s.replace_more_comments()
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
@@ -72,29 +85,16 @@ def create_archive_link(url, archiveis):
     return "https://web.archive.org/save/" + url
 
 
-def archive(url, archiveis):
-    if archiveis:
-        pairs = {"url": url}
-        try:
-            res = requests.post("https://archive.is/submit/", pairs)
-        except RECOVERABLE_EXC:
-            return False
-    else:
-        try:
-            requests.get("https://web.archive.org/save/" + url)
-            time.sleep(500)  # archive.org can't follow reddit API rules
-        except RECOVERABLE_EXC:
-            return False
-        date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
-        return "https://web.archive.org/" + date + "/" + url
-    return get_archive_link(res.text)
-
-
-
 def fix_url(url):
+    """
+    Change language code links, mobile links and beta links, SSL links and
+    username/subreddit mentions
+    :param url: URL to change.
+    :return:
+    """
     if url.startswith("/r/") or url.startswith("/u/"):
         url = "https://www.reddit.com" + url
-    return re.sub("https?://(([A-z]{2})(-[A-z]{2})?|beta|i|m|pay)"
+    return re.sub("https?://(([A-z]{2})(-[A-z]{2})?|beta|i|m|pay|ssl)"
                   "\.?reddit\.com", "https://www.reddit.com", url)
 
 
@@ -103,17 +103,90 @@ def log_error(e):
                                           traceback.format_exc()))
 
 
-class Archive:
+class ArchiveIsArchive:
 
-    def __init__(self, url, text, archiveis=None, archiveorg=None):
-        if archiveis is None:
-            archiveis = archive(url, True)
-        if archiveorg is None:
-            archiveorg = archive(url, False)
+    def __init__(self, url):
+        self.url = url
+        self.archived = self.archive()
+        pairs = {"url": self.url, "run": 1}
+        self.error_link = "https://archive.is/?" + urlencode(pairs)
+
+    def archive(self):
+        """
+        Archives to archive.is. Returns a 200, and we have to find the
+        JavaScript redirect through a regex in the response text.
+        :return: URL of the archive or False if an error occurred
+        """
+        pairs = {"url": self.url}
+        try:
+            res = requests.post("https://archive.is/submit/", pairs)
+        except RECOVERABLE_EXC:
+            return False
+        found = re.findall("http[s]?://archive.is/[0-z]{1,6}", res.text)
+        if len(found) < 1:
+            return False
+        return found[0]
+
+
+class ArchiveOrgArchive:
+
+    def __init__(self, url):
+        self.url = url
+        self.archived = self.archive()
+        self.error_link = "https://web.archive.org/save/" + self.url
+
+    def archive(self):
+        """
+        Archives to archive.org. The website gives a 403 Forbidden when the
+        archive cannot be generated (because it follows robots.txt rules)
+        :return: URL of the archive, False if an error occurred, or None if
+        we cannot archive this page.
+        """
+        try:
+            requests.get("https://web.archive.org/save/" + self.url)
+        except RECOVERABLE_EXC as e:
+            if isinstance(e, HTTPError) and e.status_code == 403:
+                return None
+            return False
+        date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
+        time.sleep(REDDIT_API_WAIT)
+        return "https://web.archive.org/" + date + "/" + self.url
+
+
+class MegalodonJPArchive:
+
+    def __init__(self, url):
+        self.url = url
+        self.archived = self.archive()
+        self.error_link = "http://megalodon.jp/"
+
+    def archive(self):
+        """
+        Archives to megalodon.jp. The website gives a 302 redirect when we
+        POST to the webpage. We can't guess the link because a 1 second
+        discrepancy will give an error when trying to view it.
+        :return: URL of the archive, or False if an error occurred.
+        """
+        pairs = {"url": self.url}
+        try:
+            res = requests.post("http://megalodon.jp/pc/get_simple/decide",
+                                pairs)
+        except RECOVERABLE_EXC:
+            return False
+        time.sleep(REDDIT_API_WAIT)  # I'm guessing it doesn't ratelimit itself
+        if res.url == "http://megalodon.jp/pc/get_simple/decide":
+            return False
+        return res.url
+
+
+class ArchiveContainer:
+
+    def __init__(self, url, text):
+        log.debug("Creating ArchiveContainer")
         self.url = url
         self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
-        self.archiveis = archiveis
-        self.archiveorg = archiveorg
+        self.archives = [ArchiveIsArchive(url), ArchiveOrgArchive(url),
+                         MegalodonJPArchive(url)]
 
 
 class Notification:
@@ -124,10 +197,23 @@ class Notification:
         self.links = links
 
     def should_notify(self):
+        """
+        Queries the database to see if we should post, and then checks for
+        other bot posts.
+        :return: True if we should post, false otherwise.
+        """
         cur.execute("SELECT * FROM links WHERE id=?", (self.post.name,))
         return False if cur.fetchone() else should_notify(self.post)
 
-    def notify(self):
+    def notify(self, if_should_notify=True):
+        """
+        Replies with a comment containing the archives or if there are too
+        many links to fit in a comment, post a submisssion to
+        /r/SnapshillBotEx and then make a comment linking to it.
+        :param if_should_notify: Only posts if should_notify returns True.
+        """
+        if if_should_notify and not self.should_notify():
+            return
         try:
             comment = self._build()
             if len(comment) > 9999:
@@ -152,21 +238,29 @@ class Notification:
     def _build(self):
         parts = [self.ext.get(), "Snapshots:"]
         count = 1
-        format = "{count}. {text} - [{aisnum}]({ais}), [{aorgnum}]({aorg})"
+        format = "[{num}]({archive})"
         for l in self.links:
-            aisnum = "1"
-            aorgnum = "2"
-            if not l.archiveis:
-                aisnum = "Error"
-                l.archiveis = create_archive_link(l.url, True)
-
-            if not l.archiveorg:
-                aorgnum = "Error"
-                l.archiveorg = create_archive_link(l.url, False)
-
-            parts.append(format.format(count=str(count), text=l.text,
-                                       aisnum=aisnum, aorgnum=aorgnum,
-                                       ais=l.archiveis, aorg=l.archiveorg))
+            subparts = []
+            subcount = 1
+            log.debug("Found link")
+            for archive in l.archives:
+                if archive.archived is None:
+                    continue
+                archive_link = archive.archived
+                if not archive_link:
+                    log.debug("Not found, using error link")
+                    archive_link = archive.error_link + " \"error " \
+                                                        "auto-archiving; " \
+                                                        "click to submit it!\""
+                    subparts.append(format.format(num="Error",
+                                                  archive=archive_link))
+                    continue
+                log.debug("Found archive")
+                subparts.append(format.format(num=str(subcount),
+                                              archive=archive_link))
+                subcount += 1
+            parts.append(str(count) + ". " + l.text + " - " +
+                         ", ".join(subparts))
             count += 1
 
         parts.append(get_footer())
@@ -181,15 +275,23 @@ class ExtendedText:
         try:
             c = s.get_wiki_page("extxt/" + subreddit.lower()).content_md
             if c.startswith("!ignore"):
-                self.extxt = []
+                self.all = []
             else:
-                self.extxt = c.split("\r\n----\r\n")
+                self.all = c.split("\r\n----\r\n")
         except RECOVERABLE_EXC:
-            self.extxt = []
+            self.all = []
+
+    def __len__(self):
+        return self.all.__len__()
 
     def get(self):
-        if len(self.extxt) == 0: return ""
-        return random.choice(self.extxt)
+        """
+        Gets a random message from the extra text or nothing if there are no 
+        messages.
+        :return: Random message or an empty string if the length of "all" is 0.
+        """
+        if len(self.all) == 0: return ""
+        return random.choice(self.all)
 
 
 class Snapshill:
@@ -204,7 +306,7 @@ class Snapshill:
 
     def run(self):
         """
-        TODO: Add comments
+        Checks through the submissions and archives and posts comments.
         """
         if not self._setup:
             raise Exception("Snapshiller not ready yet!")
@@ -216,24 +318,27 @@ class Snapshill:
             # archive.is and archive.org's bandwith. HAIL ELLEN PAO
             if submission.author and submission.author.name == "PoliticBot":
                 continue
-
-            archives = [Archive(submission.url, "*This Post*")]
+            log.debug("Found submission.\n" + submission.permalink)
+            archives = [ArchiveContainer(submission.url, "*This Post*")]
             if submission.is_self and submission.selftext_html is not None:
                 log.debug("Found text post...")
                 soup = BeautifulSoup(unescape(submission.selftext_html))
                 for anchor in soup.find_all('a'):
                     log.debug("Found link in text post...")
                     url = fix_url(anchor['href'])
-                    archives.append(Archive(url, anchor.contents[0]))
+                    archives.append(ArchiveContainer(url, anchor.contents[0]))
                 if len(archives) == 1:
                     continue
             n = Notification(submission, self._get_ext(submission.subreddit),
                              archives)
             if n.should_notify():
                 n.notify()
-            db.commit()
+                db.commit()
 
     def setup(self):
+        """
+        Logs into reddit and refreshs the extra text.
+        """
         self._login()
         self.refresh_extxt()
         self._setup = True
@@ -243,6 +348,9 @@ class Snapshill:
         self._setup = False
 
     def refresh_extxt(self):
+        """
+        Refreshes the header text for all subreddits.
+        """
         self.extxt = [ExtendedText(self.wikisr, "all")]
         for s in r.get_my_subreddits():
             self.extxt.append(ExtendedText(self.wikisr, s.display_name))
@@ -251,7 +359,14 @@ class Snapshill:
         r.login(self.username, self.password)
 
     def _get_ext(self, subreddit):
-        if len(self.extxt[0].extxt) != 0:
+        """
+        Gets the correct ExtendedText object for this subreddit. If the one 
+        for 'all' is not "!ignore", then this one will always be returned.
+        :param subreddit: Subreddit object to get.
+        :return: Extra text object found or the one for "all" if we can't 
+        find it or if not empty.
+        """
+        if len(self.extxt[0]) != 0:
             return self.extxt[0]  # return 'all' one for announcements
 
         for ex in self.extxt:
@@ -271,9 +386,11 @@ if __name__ == "__main__":
     wait = int(os.environ.get("WAIT", 5))
     refresh = int(os.environ.get("REFRESH", 1800))
 
+    log.info("Starting...")
     b = Snapshill(username, password, "SnapshillBot", limit)
     b.setup()
     me = r.user
+    log.info("Started.")
     try:
         cycles = 0
         while True:
