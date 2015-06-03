@@ -27,6 +27,8 @@ MEGALODON_JP_FORMAT = "%Y-%m%d-%H%M-%S"
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
 LEN_MAX = 35
 REDDIT_API_WAIT = 2
+REDDIT_PATTERN = re.compile("https?://(([A-z]{2})(-[A-z]{2})"
+                            "?|beta|i|m|pay|ssl|www)\.?reddit\.com")
 # we have to do some manual ratelimiting because we are tunnelling through
 # some other websites.
 
@@ -85,17 +87,21 @@ def create_archive_link(url, archiveis):
     return "https://web.archive.org/save/" + url
 
 
+def ratelimit(url):
+    if len(re.findall(REDDIT_PATTERN, url)) == 0:
+        return
+    time.sleep(REDDIT_API_WAIT)
+
 def fix_url(url):
     """
     Change language code links, mobile links and beta links, SSL links and
     username/subreddit mentions
     :param url: URL to change.
-    :return:
+    :return: Returns a fixed URL
     """
     if url.startswith("/r/") or url.startswith("/u/"):
         url = "https://www.reddit.com" + url
-    return re.sub("https?://(([A-z]{2})(-[A-z]{2})?|beta|i|m|pay|ssl)"
-                  "\.?reddit\.com", "https://www.reddit.com", url)
+    return re.sub(REDDIT_PATTERN, "https://www.reddit.com", url)
 
 
 def log_error(e):
@@ -149,7 +155,7 @@ class ArchiveOrgArchive:
                 return None
             return False
         date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
-        time.sleep(REDDIT_API_WAIT)
+        ratelimit(self.url)
         return "https://web.archive.org/" + date + "/" + self.url
 
 
@@ -173,7 +179,7 @@ class MegalodonJPArchive:
                                 pairs)
         except RECOVERABLE_EXC:
             return False
-        time.sleep(REDDIT_API_WAIT)  # I'm guessing it doesn't ratelimit itself
+        ratelimit(self.url)
         if res.url == "http://megalodon.jp/pc/get_simple/decide":
             return False
         return res.url
@@ -205,15 +211,13 @@ class Notification:
         cur.execute("SELECT * FROM links WHERE id=?", (self.post.name,))
         return False if cur.fetchone() else should_notify(self.post)
 
-    def notify(self, if_should_notify=True):
+    def notify(self):
         """
         Replies with a comment containing the archives or if there are too
         many links to fit in a comment, post a submisssion to
         /r/SnapshillBotEx and then make a comment linking to it.
-        :param if_should_notify: Only posts if should_notify returns True.
+        :return Nothing
         """
-        if if_should_notify and not self.should_notify():
-            return
         try:
             comment = self._build()
             if len(comment) > 9999:
@@ -319,7 +323,8 @@ class Snapshill:
             if submission.author and submission.author.name == "PoliticBot":
                 continue
             log.debug("Found submission.\n" + submission.permalink)
-            archives = [ArchiveContainer(submission.url, "*This Post*")]
+            archives = [ArchiveContainer(fix_url(submission.url),
+                                         "*This Post*")]
             if submission.is_self and submission.selftext_html is not None:
                 log.debug("Found text post...")
                 soup = BeautifulSoup(unescape(submission.selftext_html))
