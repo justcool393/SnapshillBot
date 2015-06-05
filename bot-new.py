@@ -39,7 +39,7 @@ RECOVERABLE_EXC = (ConnectionError,
                    RateLimitExceeded,
                    InvalidCaptcha)
 
-loglevel = logging.INFO
+loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
 
 logging.basicConfig(level=loglevel,
                     format="[%(asctime)s] [%(levelname)s] %(message)s")
@@ -109,7 +109,6 @@ def fix_url(url):
 def log_error(e):
     log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
                                           traceback.format_exc()))
-
 
 class ArchiveIsArchive:
 
@@ -287,8 +286,7 @@ class ExtendedText:
         messages.
         :return: Random message or an empty string if the length of "all" is 0.
         """
-        if len(self.all) == 0: return ""
-        return random.choice(self.all)
+        return "" if not self.all else random.choice(self.all)
 
 
 class Snapshill:
@@ -314,8 +312,12 @@ class Snapshill:
             # Your crap posts aren't worth wasting precious CPU cycles and
             # archive.is and archive.org's bandwith. HAIL ELLEN PAO
             if submission.author and submission.author.name == "PoliticBot":
+                log.info("Submisson by banned user; skipping.")
                 continue
             log.debug("Found submission.\n" + submission.permalink)
+            if not should_notify(submission):
+                log.debug("Skipping.")
+                continue
             archives = [ArchiveContainer(fix_url(submission.url),
                                          "*This Post*")]
             if submission.is_self and submission.selftext_html is not None:
@@ -327,10 +329,9 @@ class Snapshill:
                     archives.append(ArchiveContainer(url, anchor.contents[0]))
                 if len(archives) == 1:
                     continue
-            if should_notify(submission):
-                Notification(submission, self._get_ext(
-                    submission.subreddit), archives).notify()
-                db.commit()
+            Notification(submission, self._get_ext(submission.subreddit),
+                         archives).notify()
+            db.commit()
 
     def setup(self):
         """
@@ -393,9 +394,9 @@ if __name__ == "__main__":
         while True:
             try:
                 cycles += 1
-                log.debug("Running")
+                log.info("Running")
                 b.run()
-                log.debug("Done")
+                log.info("Done")
                 # This will refresh by default around ~30 minutes (depending
                 # on delays).
                 if cycles > (refresh / wait) / 2:
