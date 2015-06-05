@@ -64,7 +64,9 @@ def should_notify(s):
     :param s: Submission to check
     :return: If we should comment or not
     """
-
+    cur.execute("SELECT * FROM links WHERE id=?", (s.name,))
+    if cur.fetchone():
+        return False
     s.replace_more_comments()
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
@@ -202,15 +204,6 @@ class Notification:
         self.ext = ext
         self.links = links
 
-    def should_notify(self):
-        """
-        Queries the database to see if we should post, and then checks for
-        other bot posts.
-        :return: True if we should post, false otherwise.
-        """
-        cur.execute("SELECT * FROM links WHERE id=?", (self.post.name,))
-        return False if cur.fetchone() else should_notify(self.post)
-
     def notify(self):
         """
         Replies with a comment containing the archives or if there are too
@@ -334,10 +327,9 @@ class Snapshill:
                     archives.append(ArchiveContainer(url, anchor.contents[0]))
                 if len(archives) == 1:
                     continue
-            n = Notification(submission, self._get_ext(submission.subreddit),
-                             archives)
-            if n.should_notify():
-                n.notify()
+            if should_notify(submission):
+                Notification(submission, self._get_ext(
+                    submission.subreddit), archives).notify()
                 db.commit()
 
     def setup(self):
