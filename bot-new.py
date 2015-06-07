@@ -39,6 +39,8 @@ RECOVERABLE_EXC = (ConnectionError,
                    RateLimitExceeded,
                    InvalidCaptcha)
 
+ignorelist = []
+
 loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
 
 logging.basicConfig(level=loglevel,
@@ -70,7 +72,7 @@ def should_notify(s):
     s.replace_more_comments()
     flat_comments = praw.helpers.flatten_tree(s.comments)
     for c in flat_comments:
-        if c.author and (c.author == me or c.author in me.get_friends()):
+        if c.author and c.author.name in ignorelist:
             return False
     return True
 
@@ -93,6 +95,14 @@ def ratelimit(url):
     if len(re.findall(REDDIT_PATTERN, url)) == 0:
         return
     time.sleep(REDDIT_API_WAIT)
+
+
+def refresh_ignore_list():
+    ignorelist.clear()
+    ignorelist.append(me.name)
+    for user in me.get_friends():
+        ignorelist.append(user.name)
+
 
 def fix_url(url):
     """
@@ -156,7 +166,6 @@ class ArchiveOrgArchive:
                 return None
             return False
         date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
-        ratelimit(self.url)
         return "https://web.archive.org/" + date + "/" + self.url
 
 
@@ -180,7 +189,6 @@ class MegalodonJPArchive:
                                 pairs)
         except RECOVERABLE_EXC:
             return False
-        ratelimit(self.url)
         if res.url == "http://megalodon.jp/pc/get_simple/decide":
             return False
         return res.url
@@ -322,23 +330,26 @@ class Snapshill:
                                          "*This Post*")]
             if submission.is_self and submission.selftext_html is not None:
                 log.debug("Found text post...")
-                soup = BeautifulSoup(unescape(submission.selftext_html))
-                for anchor in soup.find_all('a'):
+                links = BeautifulSoup(unescape(
+                    submission.selftext_html)).find_all("a")
+                if len(links) < 1:
+                    continue
+                for anchor in links:
                     log.debug("Found link in text post...")
                     url = fix_url(anchor['href'])
                     archives.append(ArchiveContainer(url, anchor.contents[0]))
-                if len(archives) == 1:
-                    continue
+                    ratelimit(url)
             Notification(submission, self._get_ext(submission.subreddit),
                          archives).notify()
             db.commit()
 
     def setup(self):
         """
-        Logs into reddit and refreshs the extra text.
+        Logs into reddit and refreshs the header text and ignore list.
         """
         self._login()
         self.refresh_extxt()
+        refresh_ignore_list()
         self._setup = True
 
     def quit(self):
@@ -400,7 +411,8 @@ if __name__ == "__main__":
                 # This will refresh by default around ~30 minutes (depending
                 # on delays).
                 if cycles > (refresh / wait) / 2:
-                    log.info("Reloading header text...")
+                    log.info("Reloading header text and ignore list...")
+                    refresh_ignore_list()
                     b.refresh_extxt()
                     cycles = 0
             except RECOVERABLE_EXC as e:
