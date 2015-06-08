@@ -12,6 +12,7 @@ import warnings
 from bs4 import BeautifulSoup
 from html.parser import unescape
 from urllib.parse import urlencode
+from praw.helpers import flatten_tree
 
 # Requests' exceptions live in .exceptions and are called errors.
 from requests.exceptions import ConnectionError, HTTPError
@@ -39,7 +40,6 @@ RECOVERABLE_EXC = (ConnectionError,
                    RateLimitExceeded,
                    InvalidCaptcha)
 
-ignorelist = []
 
 loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
 
@@ -51,7 +51,7 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
 r = praw.Reddit(USER_AGENT)
-me = None
+ignorelist = set()
 
 
 def get_footer():
@@ -59,36 +59,21 @@ def get_footer():
            "contact}))*".format(info=INFO, contact=CONTACT)
 
 
-def should_notify(s):
+def should_notify(submission):
     """
     Looks for other snapshot bot comments in the comment chain and doesn't
     post if they do.
-    :param s: Submission to check
+    :param submission: Submission to check
     :return: If we should comment or not
     """
-    cur.execute("SELECT * FROM links WHERE id=?", (s.name,))
+    cur.execute("SELECT * FROM links WHERE id=?", (submission.name,))
     if cur.fetchone():
         return False
-    s.replace_more_comments()
-    flat_comments = praw.helpers.flatten_tree(s.comments)
-    for c in flat_comments:
-        if c.author and c.author.name in ignorelist:
+    submission.replace_more_comments()
+    for comment in flatten_tree(submission.comments):
+        if comment.author and comment.author.name in ignorelist:
             return False
     return True
-
-
-def get_archive_link(data):
-    a = re.findall("http[s]?://archive.is/[0-z]{1,6}", data)
-    if len(a) < 1:
-        return False
-    return a[0]
-
-
-def create_archive_link(url, archiveis):
-    if archiveis:
-        pairs = {"url": url, "run": '1'}
-        return "https://archive.is/?" + urlencode(pairs)
-    return "https://web.archive.org/save/" + url
 
 
 def ratelimit(url):
@@ -99,9 +84,9 @@ def ratelimit(url):
 
 def refresh_ignore_list():
     ignorelist.clear()
-    ignorelist.append(me.name)
-    for user in me.get_friends():
-        ignorelist.append(user.name)
+    ignorelist.add(r.user.name)
+    for friend in r.user.get_friends():
+        ignorelist.add(friend.name)
 
 
 def fix_url(url):
@@ -112,8 +97,8 @@ def fix_url(url):
     :return: Returns a fixed URL
     """
     if url.startswith("/r/") or url.startswith("/u/"):
-        url = "https://www.reddit.com" + url
-    return re.sub(REDDIT_PATTERN, "https://www.reddit.com", url)
+        url = "http://www.reddit.com" + url
+    return re.sub(REDDIT_PATTERN, "http://www.reddit.com", url)
 
 
 def log_error(e):
@@ -206,9 +191,9 @@ class ArchiveContainer:
 
 class Notification:
 
-    def __init__(self, post, ext, links):
+    def __init__(self, post, header, links):
         self.post = post
-        self.ext = ext
+        self.header = header
         self.links = links
 
     def notify(self):
@@ -227,20 +212,20 @@ class Notification:
                                       raise_captcha_exception=True)
                 submission.add_comment("The original submission can be found "
                                        "here:\n\n" + link)
-                c = self.post.add_comment("Wow, that's a lot of links! The "
+                comment = self.post.add_comment("Wow, that's a lot of links! The "
                                           "snapshots can be [found here.](" +
                                           submission.url + ")\n\n" + get_footer())
                 log.info("Posted a comment and new submission")
             else:
-                c = self.post.add_comment(comment)
+                comment = self.post.add_comment(comment)
         except RECOVERABLE_EXC as e:
             log_error(e)
             return
         cur.execute("INSERT INTO links (id, reply) VALUES (?, ?)",
-                    (self.post.name, c.name))
+                    (self.post.name, comment.name))
 
     def _build(self):
-        parts = [self.ext.get(), "Snapshots:"]
+        parts = [self.header.get(), "Snapshots:"]
         count = 1
         format = "[{num}]({archive})"
         for l in self.links:
@@ -271,40 +256,41 @@ class Notification:
         return "\n\n".join(parts)
 
 
-class ExtendedText:
+class Header:
 
-    def __init__(self, wikisr, subreddit):
+    def __init__(self, settings_wiki, subreddit):
         self.subreddit = subreddit
-        s = r.get_subreddit(wikisr)
+        settings = r.get_subreddit(settings_wiki)
+        self.texts = []
+
         try:
-            c = s.get_wiki_page("extxt/" + subreddit.lower()).content_md
-            if c.startswith("!ignore"):
-                self.all = []
-            else:
-                self.all = c.split("\r\n----\r\n")
+            content = settings.get_wiki_page("extxt/" + subreddit.lower()).content_md
+            if not content.startswith("!ignore"):
+                self.texts = content.split("\r\n----\r\n")
         except RECOVERABLE_EXC:
-            self.all = []
+            pass
 
     def __len__(self):
-        return self.all.__len__()
+        return len(self.texts)
 
     def get(self):
         """
-        Gets a random message from the extra text or nothing if there are no 
+        Gets a random message from the extra text or nothing if there are no
         messages.
-        :return: Random message or an empty string if the length of "all" is 0.
+        :return: Random message or an empty string if the length of "texts"
+        is 0.
         """
-        return "" if not self.all else random.choice(self.all)
+        return "" if not self.texts else random.choice(self.texts)
 
 
 class Snapshill:
 
-    def __init__(self, username, password, wikisr, limit=25):
+    def __init__(self, username, password, settings_wiki, limit=25):
         self.username = username
         self.password = password
         self.limit = limit
-        self.wikisr = wikisr
-        self.extxt = []
+        self.settings_wiki = settings_wiki
+        self.headers = {}
         self._setup = False
 
     def run(self):
@@ -332,14 +318,14 @@ class Snapshill:
                 log.debug("Found text post...")
                 links = BeautifulSoup(unescape(
                     submission.selftext_html)).find_all("a")
-                if len(links) < 1:
+                if not len(links):
                     continue
                 for anchor in links:
                     log.debug("Found link in text post...")
                     url = fix_url(anchor['href'])
                     archives.append(ArchiveContainer(url, anchor.contents[0]))
                     ratelimit(url)
-            Notification(submission, self._get_ext(submission.subreddit),
+            Notification(submission, self._get_header(submission.subreddit),
                          archives).notify()
             db.commit()
 
@@ -348,41 +334,40 @@ class Snapshill:
         Logs into reddit and refreshs the header text and ignore list.
         """
         self._login()
-        self.refresh_extxt()
+        self.refresh_headers()
         refresh_ignore_list()
         self._setup = True
 
     def quit(self):
-        self.extxt = []
+        self.headers = {}
         self._setup = False
 
-    def refresh_extxt(self):
+    def refresh_headers(self):
         """
         Refreshes the header text for all subreddits.
         """
-        self.extxt = [ExtendedText(self.wikisr, "all")]
-        for s in r.get_my_subreddits():
-            self.extxt.append(ExtendedText(self.wikisr, s.display_name))
+        self.headers = {"all": Header(self.settings_wiki, "all")}
+        for subreddit in r.get_my_subreddits():
+            name = subreddit.display_name.lower()
+            self.headers[name] = Header(self.settings_wiki, name)
 
     def _login(self):
         r.login(self.username, self.password)
 
-    def _get_ext(self, subreddit):
+    def _get_header(self, subreddit):
         """
-        Gets the correct ExtendedText object for this subreddit. If the one 
-        for 'all' is not "!ignore", then this one will always be returned.
+        Gets the correct Header object for this subreddit. If the one for 'all'
+        is not "!ignore", then this one will always be returned.
         :param subreddit: Subreddit object to get.
-        :return: Extra text object found or the one for "all" if we can't 
-        find it or if not empty.
+        :return: Extra text object found or the one for "all" if we can't find
+        it or if not empty.
         """
-        if len(self.extxt[0]) != 0:
-            return self.extxt[0]  # return 'all' one for announcements
+        all = self.headers["all"]
 
-        for ex in self.extxt:
-            if ex.subreddit.lower() == subreddit.display_name.lower():
-                return ex
+        if len(all):
+            return all  # return 'all' one for announcements
 
-        return self.extxt[0]
+        return self.headers.get(subreddit.display_name.lower(), all)
 
 
 db = sqlite3.connect(DB_FILE)
@@ -396,9 +381,9 @@ if __name__ == "__main__":
     refresh = int(os.environ.get("REFRESH", 1800))
 
     log.info("Starting...")
-    b = Snapshill(username, password, "SnapshillBot", limit)
-    b.setup()
-    me = r.user
+    snapshill = Snapshill(username, password, "SnapshillBot", limit)
+    snapshill.setup()
+
     log.info("Started.")
     try:
         cycles = 0
@@ -406,14 +391,14 @@ if __name__ == "__main__":
             try:
                 cycles += 1
                 log.info("Running")
-                b.run()
+                snapshill.run()
                 log.info("Done")
                 # This will refresh by default around ~30 minutes (depending
                 # on delays).
                 if cycles > (refresh / wait) / 2:
                     log.info("Reloading header text and ignore list...")
                     refresh_ignore_list()
-                    b.refresh_extxt()
+                    snapshill.refresh_headers()
                     cycles = 0
             except RECOVERABLE_EXC as e:
                 log_error(e)
@@ -421,6 +406,6 @@ if __name__ == "__main__":
             time.sleep(wait)
     except KeyboardInterrupt:
         pass
-    b.quit()
+    snapshill.quit()
     db.close()
     exit(0)

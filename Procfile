@@ -1,1 +1,1 @@
-worker: python bot-new.py
+worker: python snapshill.py
