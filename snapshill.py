@@ -248,8 +248,7 @@ class Notification:
                 subparts.append(format.format(num=str(subcount),
                                               archive=archive_link))
                 subcount += 1
-            parts.append(str(count) + ". " + l.text + " - " +
-                         ", ".join(subparts))
+            parts.append("{}. {} - {}".format(count, l.text, ", ".join(subparts)))
             count += 1
 
         parts.append(get_footer())
