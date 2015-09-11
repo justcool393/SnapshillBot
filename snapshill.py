@@ -14,11 +14,7 @@ from html.parser import unescape
 from urllib.parse import urlencode
 from praw.helpers import flatten_tree
 
-# Requests' exceptions live in .exceptions and are called errors.
-from requests.exceptions import ConnectionError, HTTPError
-# Praw's exceptions live in .errors and are called exceptions.
-from praw.errors import APIException, ClientException, RateLimitExceeded, \
-    InvalidCaptcha
+from praw.errors import APIException, ClientException, HTTPException
 
 USER_AGENT = "Archives to archive.is and archive.org (/u/justcool393) v1.2"
 INFO = "/r/SnapshillBot"
@@ -33,12 +29,9 @@ REDDIT_PATTERN = re.compile("https?://(([A-z]{2})(-[A-z]{2})"
 # we have to do some manual ratelimiting because we are tunnelling through
 # some other websites.
 
-RECOVERABLE_EXC = (ConnectionError,
-                   HTTPError,
-                   APIException,
+RECOVERABLE_EXC = (APIException,
                    ClientException,
-                   RateLimitExceeded,
-                   InvalidCaptcha)
+                   HTTPException)
 
 
 loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
