@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 import praw
 import re
@@ -16,7 +16,7 @@ from praw.helpers import flatten_tree
 
 from praw.errors import APIException, ClientException, HTTPException
 
-USER_AGENT = "Archives to archive.is and archive.org (/u/justcool393) v1.2"
+USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v1.2"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
@@ -89,7 +89,7 @@ def fix_url(url):
     :param url: URL to change.
     :return: Returns a fixed URL
     """
-    if url.startswith("/r/") or url.startswith("/u/"):
+    if url.startswith("r/") or url.startswith("u/"):
         url = "http://www.reddit.com" + url
     return re.sub(REDDIT_PATTERN, "http://www.reddit.com", url)
 
@@ -97,6 +97,7 @@ def fix_url(url):
 def log_error(e):
     log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
                                           traceback.format_exc()))
+
 
 class ArchiveIsArchive:
 
@@ -295,11 +296,6 @@ class Snapshill:
         submissions = r.get_new(limit=self.limit)
 
         for submission in submissions:
-            # Your crap posts aren't worth wasting precious CPU cycles and
-            # archive.is and archive.org's bandwith. HAIL ELLEN PAO
-            if submission.author and submission.author.name == "PoliticBot":
-                log.info("Submisson by banned user; skipping.")
-                continue
             log.debug("Found submission.\n" + submission.permalink)
             if not should_notify(submission):
                 log.debug("Skipping.")
