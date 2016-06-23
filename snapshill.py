@@ -173,6 +173,13 @@ class MegalodonJPArchive:
         return res.url
 
 
+class GoldfishArchive:
+
+    def __init__(self, url):
+        self.url = url
+        self.archived = re.sub(REDDIT_PATTERN, "http://r.go1dfish.me/", url)
+        self.error_link = "http://r.go1dfish.me/"
+
 class ArchiveContainer:
 
     def __init__(self, url, text):
@@ -181,6 +188,8 @@ class ArchiveContainer:
         self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
         self.archives = [ArchiveIsArchive(url), ArchiveOrgArchive(url),
                          MegalodonJPArchive(url)]
+        if re.match(REDDIT_PATTERN, url):
+            self.archives.append(GoldfishArchive(url))
 
 
 class Notification:
@@ -308,10 +317,13 @@ class Snapshill:
                     submission.selftext_html)).find_all("a")
                 if not len(links):
                     continue
+                finishedURLs = []
                 for anchor in links:
                     log.debug("Found link in text post...")
                     url = fix_url(anchor['href'])
+                    if url in finishedURLs: continue #skip for sanity
                     archives.append(ArchiveContainer(url, anchor.contents[0]))
+                    finishedURLs.append(url)
                     ratelimit(url)
             Notification(submission, self._get_header(submission.subreddit),
                          archives).notify()
