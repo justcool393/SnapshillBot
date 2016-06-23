@@ -325,7 +325,7 @@ class Snapshill:
                     if time.time() > debugTime + WARN_TIME and not warned:
                         log.warn("Spent over " + WARN_TIME + " seconds on "
                                  + "post (ID: " + submission.name + ")")
-                        warn = True
+                        warned = True
                     log.debug("Found link in text post...")
                     url = fix_url(anchor['href'])
                     if url in finishedURLs: continue #skip for sanity
