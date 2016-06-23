@@ -24,6 +24,7 @@ MEGALODON_JP_FORMAT = "%Y-%m%d-%H%M-%S"
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
 LEN_MAX = 35
 REDDIT_API_WAIT = 2
+WARN_TIME = 300 # warn after spending 5 minutes on a post
 REDDIT_PATTERN = re.compile("https?://(([A-z]{2})(-[A-z]{2})"
                             "?|beta|i|m|pay|ssl|www)\.?reddit\.com")
 # we have to do some manual ratelimiting because we are tunnelling through
@@ -305,6 +306,8 @@ class Snapshill:
         submissions = r.get_new(limit=self.limit)
 
         for submission in submissions:
+            debugTime = time.time()
+            warned = False
             log.debug("Found submission.\n" + submission.permalink)
             if not should_notify(submission):
                 log.debug("Skipping.")
@@ -319,6 +322,10 @@ class Snapshill:
                     continue
                 finishedURLs = []
                 for anchor in links:
+                    if time.time() > debugTime + WARN_TIME and not warned:
+                        log.warn("Spent over " + WARN_TIME + " seconds on "
+                                 + "post (ID: " + submission.name + ")")
+                        warn = True
                     log.debug("Found link in text post...")
                     url = fix_url(anchor['href'])
                     if url in finishedURLs: continue #skip for sanity
