@@ -16,7 +16,7 @@ from praw.helpers import flatten_tree
 
 from praw.errors import APIException, ClientException, HTTPException
 
-USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v1.2"
+USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v1.3"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
@@ -27,6 +27,7 @@ REDDIT_API_WAIT = 2
 WARN_TIME = 300 # warn after spending 5 minutes on a post
 REDDIT_PATTERN = re.compile("https?://(([A-z]{2})(-[A-z]{2})"
                             "?|beta|i|m|pay|ssl|www)\.?reddit\.com")
+SUBREDDIT_OR_USER = re.compile("/(u|user|r)/[^\/]+/?$")
 # we have to do some manual ratelimiting because we are tunnelling through
 # some other websites.
 
@@ -95,6 +96,16 @@ def fix_url(url):
     return re.sub(REDDIT_PATTERN, "http://www.reddit.com", url)
 
 
+def skip_url(url):
+    """
+    Skip naked username mentions and subreddit links.
+    """
+    if REDDIT_PATTERN.match(url) and SUBREDDIT_OR_USER.search(url):
+        return True
+
+    return False
+
+
 def log_error(e):
     log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
                                           traceback.format_exc()))
@@ -115,13 +126,17 @@ class ArchiveIsArchive:
         :return: URL of the archive or False if an error occurred
         """
         pairs = {"url": self.url}
+
         try:
-            res = requests.post("https://archive.is/submit/", pairs)
+            res = requests.post("https://archive.is/submit/", pairs, verify=False)
         except RECOVERABLE_EXC:
             return False
+
         found = re.findall("http[s]?://archive.is/[0-z]{1,6}", res.text)
+
         if len(found) < 1:
             return False
+
         return found[0]
 
 
@@ -308,30 +323,47 @@ class Snapshill:
         for submission in submissions:
             debugTime = time.time()
             warned = False
+
             log.debug("Found submission.\n" + submission.permalink)
+
             if not should_notify(submission):
                 log.debug("Skipping.")
                 continue
+
             archives = [ArchiveContainer(fix_url(submission.url),
                                          "*This Post*")]
             if submission.is_self and submission.selftext_html is not None:
                 log.debug("Found text post...")
+
                 links = BeautifulSoup(unescape(
                     submission.selftext_html)).find_all("a")
+
                 if not len(links):
                     continue
+
                 finishedURLs = []
+
                 for anchor in links:
                     if time.time() > debugTime + WARN_TIME and not warned:
-                        log.warn("Spent over " + WARN_TIME + " seconds on "
-                                 + "post (ID: " + submission.name + ")")
+                        log.warn("Spent over {} seconds on post (ID: {})".format(
+                            WARN_TIME, submission.name))
+
                         warned = True
+
                     log.debug("Found link in text post...")
+
                     url = fix_url(anchor['href'])
-                    if url in finishedURLs: continue #skip for sanity
+
+                    if skip_url(url):
+                        continue
+
+                    if url in finishedURLs:
+                        continue #skip for sanity
+
                     archives.append(ArchiveContainer(url, anchor.contents[0]))
                     finishedURLs.append(url)
                     ratelimit(url)
+
             Notification(submission, self._get_header(submission.subreddit),
                          archives).notify()
             db.commit()
