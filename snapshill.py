@@ -218,7 +218,8 @@ class ArchiveContainer:
         log.debug("Creating ArchiveContainer")
         self.url = url
         self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
-        self.archives = [ArchiveIsArchive(url), ArchiveOrgArchive(url),
+        # self.archives = [ArchiveIsArchive(url),]
+        self.archives = [ArchiveOrgArchive(url),
                          MegalodonJPArchive(url)]
         if re.match(REDDIT_PATTERN, url):
             self.archives.append(GoldfishArchive(url))
