@@ -322,7 +322,7 @@ class Header:
         return self._settings.get_wiki_page("extxt/" + self.subreddit.lower()).content_md
 
     def _parse_quotes(self, quotes_str):
-        return [strip(q) for q in re.split('\r\n-{3,}\r\n', quotes_str) if strip(q)]
+        return [q.strip() for q in re.split('\r\n-{3,}\r\n', quotes_str) if q.strip()]
 
 
 class Snapshill:
