@@ -127,7 +127,8 @@ class ArchiveIsArchive(NameMixin):
 
     def __init__(self, url):
         self.url = url
-        self.archived = self.archive()
+        # self.archived = self.archive()
+        self.archived = False
         pairs = {"url": self.url, "run": 1}
         self.error_link = "https://archive.is/?" + urlencode(pairs)
 
@@ -150,6 +151,11 @@ class ArchiveIsArchive(NameMixin):
             return False
 
         return found[0]
+
+    @property
+    def name(self):
+        """Since we can't automatically save archive.is, just add links."""
+        return "_({})_".format(self.site_name)
 
 
 class ArchiveOrgArchive(NameMixin):
@@ -213,16 +219,17 @@ class GoldfishArchive(NameMixin):
 
 
 class ArchiveContainer:
-
     def __init__(self, url, text):
         log.debug("Creating ArchiveContainer")
         self.url = url
         self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
-        # self.archives = [ArchiveIsArchive(url),]
         self.archives = [ArchiveOrgArchive(url),
                          MegalodonJPArchive(url)]
+
         if re.match(REDDIT_PATTERN, url):
             self.archives.append(GoldfishArchive(url))
+
+        self.archives.append(ArchiveIsArchive(url))
 
 
 class Notification:
