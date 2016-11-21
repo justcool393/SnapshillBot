@@ -208,8 +208,8 @@ class GoldfishArchive(NameMixin):
 
     def __init__(self, url):
         self.url = url
-        self.archived = re.sub(REDDIT_PATTERN, "http://r.go1dfish.me/", url)
-        self.error_link = "http://r.go1dfish.me/"
+        self.archived = re.sub(REDDIT_PATTERN, "http://www.ceddit.com/", url)
+        self.error_link = "http://www.ceddit.com/"
 
 
 class ArchiveContainer:
