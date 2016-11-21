@@ -42,7 +42,7 @@ logging.basicConfig(level=loglevel,
                     format="[%(asctime)s] [%(levelname)s] %(message)s")
 
 log = logging.getLogger("snapshill")
-logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(loglevel)
 warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
 r = praw.Reddit(USER_AGENT)
