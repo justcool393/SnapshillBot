@@ -111,7 +111,19 @@ def log_error(e):
                                           traceback.format_exc()))
 
 
-class ArchiveIsArchive:
+class NameMixin:
+    site_name = None
+
+    @property
+    def name(self):
+        if self.archived:
+            return self.site_name
+        else:
+            return "_{}\*_".format(self.site_name)
+
+
+class ArchiveIsArchive(NameMixin):
+    site_name = "archive.is"
 
     def __init__(self, url):
         self.url = url
@@ -140,7 +152,8 @@ class ArchiveIsArchive:
         return found[0]
 
 
-class ArchiveOrgArchive:
+class ArchiveOrgArchive(NameMixin):
+    site_name = "archive.org"
 
     def __init__(self, url):
         self.url = url
@@ -164,7 +177,8 @@ class ArchiveOrgArchive:
         return "https://web.archive.org/" + date + "/" + self.url
 
 
-class MegalodonJPArchive:
+class MegalodonJPArchive(NameMixin):
+    site_name = "megalodon.jp"
 
     def __init__(self, url):
         self.url = url
@@ -189,12 +203,14 @@ class MegalodonJPArchive:
         return res.url
 
 
-class GoldfishArchive:
+class GoldfishArchive(NameMixin):
+    site_name = "ceddit.com"
 
     def __init__(self, url):
         self.url = url
         self.archived = re.sub(REDDIT_PATTERN, "http://r.go1dfish.me/", url)
         self.error_link = "http://r.go1dfish.me/"
+
 
 class ArchiveContainer:
 
@@ -245,32 +261,33 @@ class Notification:
 
     def _build(self):
         parts = [self.header.get(), "Snapshots:"]
-        count = 1
-        format = "[{num}]({archive})"
-        for l in self.links:
+        format = "[{name}]({archive})"
+
+        for i, link in enumerate(self.links, 1):
             subparts = []
-            subcount = 1
             log.debug("Found link")
-            for archive in l.archives:
+
+            for archive in link.archives:
                 if archive.archived is None:
                     continue
+
                 archive_link = archive.archived
+
                 if not archive_link:
                     log.debug("Not found, using error link")
-                    archive_link = archive.error_link + " \"error " \
-                                                        "auto-archiving; " \
-                                                        "click to submit it!\""
-                    subparts.append(format.format(num="Error",
-                                                  archive=archive_link))
-                    continue
-                log.debug("Found archive")
-                subparts.append(format.format(num=str(subcount),
+                    archive_link = archive.error_link + ' "could not ' \
+                                                        'auto-archive; ' \
+                                                        'click to resubmit it!"'
+                else:
+                    log.debug("Found archive")
+
+                subparts.append(format.format(name=archive.name,
                                               archive=archive_link))
-                subcount += 1
-            parts.append("{}. {} - {}".format(count, l.text, ", ".join(subparts)))
-            count += 1
+
+            parts.append("{}. {} - {}".format(i, link.text, ", ".join(subparts)))
 
         parts.append(get_footer())
+
         return "\n\n".join(parts)
 
 
@@ -278,13 +295,13 @@ class Header:
 
     def __init__(self, settings_wiki, subreddit):
         self.subreddit = subreddit
-        settings = r.get_subreddit(settings_wiki)
         self.texts = []
+        self._settings = r.get_subreddit(settings_wiki)
 
         try:
-            content = settings.get_wiki_page("extxt/" + subreddit.lower()).content_md
+            content = self._get_wiki_content()
             if not content.startswith("!ignore"):
-                self.texts = content.split("\r\n----\r\n")
+                self.texts = self._parse_quotes(content)
         except RECOVERABLE_EXC:
             pass
 
@@ -299,6 +316,12 @@ class Header:
         is 0.
         """
         return "" if not self.texts else random.choice(self.texts)
+
+    def _get_wiki_content(self):
+        return self._settings.get_wiki_page("extxt/" + self.subreddit.lower()).content_md
+
+    def _parse_quotes(self, quotes_str):
+        return [strip(q) for q in re.split('\r\n-{3,}\r\n', quotes_str) if strip(q)]
 
 
 class Snapshill:
