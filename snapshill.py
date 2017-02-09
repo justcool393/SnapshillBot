@@ -12,9 +12,29 @@ import warnings
 from bs4 import BeautifulSoup
 from html.parser import unescape
 from urllib.parse import urlencode
-from praw.helpers import flatten_tree
 
-from praw.errors import APIException, ClientException, HTTPException
+PRAW4 = int(praw.__version__.split('.')[0]) == 4
+PRAW3 = int(praw.__version__.split('.')[0]) == 3
+
+try:
+    from praw.helpers import flatten_tree
+except ImportError:
+    def flatten_tree(comments):
+        return comments.list()
+
+try:
+    from praw.errors import APIException, ClientException, HTTPException
+
+    RECOVERABLE_EXC = (APIException,
+                       ClientException,
+                       HTTPException)
+except ImportError:
+    from praw.exceptions import APIException, ClientException
+    from prawcore.exceptions import NotFound, Forbidden
+    RECOVERABLE_EXC = (APIException,
+                       ClientException,
+                       NotFound,
+                       Forbidden)
 
 USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v1.3"
 INFO = "/r/SnapshillBot"
@@ -31,11 +51,6 @@ SUBREDDIT_OR_USER = re.compile("/(u|user|r)/[^\/]+/?$")
 # we have to do some manual ratelimiting because we are tunnelling through
 # some other websites.
 
-RECOVERABLE_EXC = (APIException,
-                   ClientException,
-                   HTTPException)
-
-
 loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
 
 logging.basicConfig(level=loglevel,
@@ -45,7 +60,6 @@ log = logging.getLogger("snapshill")
 logging.getLogger("requests").setLevel(loglevel)
 warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
-r = praw.Reddit(USER_AGENT)
 ignorelist = set()
 
 
@@ -64,7 +78,10 @@ def should_notify(submission):
     cur.execute("SELECT * FROM links WHERE id=?", (submission.name,))
     if cur.fetchone():
         return False
-    submission.replace_more_comments()
+    if hasattr(submission, 'replace_more_comments'):
+        submission.replace_more_comments()
+    else:
+        submission.comments.replace_more(limit=0)
     for comment in flatten_tree(submission.comments):
         if comment.author and comment.author.name in ignorelist:
             return False
@@ -79,8 +96,10 @@ def ratelimit(url):
 
 def refresh_ignore_list():
     ignorelist.clear()
-    ignorelist.add(r.user.name)
-    for friend in r.user.get_friends():
+    name = r.user.name if hasattr(r.user, 'name') else r.user.me().name
+    ignorelist.add(name)
+    friends = r.user.get_friends() if hasattr(r.user, 'get_friends') else r.user.friends()
+    for friend in friends:
         ignorelist.add(friend.name)
 
 
@@ -248,19 +267,22 @@ class Notification:
         """
         try:
             comment = self._build()
+            self_post_add_comment = self.post.add_comment if PRAW3 else self.post.reply
+
             if len(comment) > 9999:
                 link = self.post.permalink
                 submission = r.submit("SnapshillBotEx", "Archives for " + link,
                                       text=comment[:39999],
                                       raise_captcha_exception=True)
-                submission.add_comment("The original submission can be found "
+                submission_add_comment = submission.add_comment if PRAW3 else submission.reply
+                submission_add_comment("The original submission can be found "
                                        "here:\n\n" + link)
-                comment = self.post.add_comment("Wow, that's a lot of links! The "
+                comment = self_post_add_comment("Wow, that's a lot of links! The "
                                           "snapshots can be [found here.](" +
                                           submission.url + ")\n\n" + get_footer())
                 log.info("Posted a comment and new submission")
             else:
-                comment = self.post.add_comment(comment)
+                comment = self_post_add_comment(comment)
         except RECOVERABLE_EXC as e:
             log_error(e)
             return
@@ -304,7 +326,8 @@ class Header:
     def __init__(self, settings_wiki, subreddit):
         self.subreddit = subreddit
         self.texts = []
-        self._settings = r.get_subreddit(settings_wiki)
+        get_subreddit = r.get_subreddit if PRAW3 else r.subreddit
+        self._settings = get_subreddit(settings_wiki)
 
         try:
             content = self._get_wiki_content()
@@ -326,7 +349,10 @@ class Header:
         return "" if not self.texts else random.choice(self.texts)
 
     def _get_wiki_content(self):
-        return self._settings.get_wiki_page("extxt/" + self.subreddit.lower()).content_md
+        if PRAW3:
+            return self._settings.get_wiki_page("extxt/" + self.subreddit.lower()).content_md
+        else: 
+            return self._settings.wiki["extxt/" + self.subreddit.lower()].content_md
 
     def _parse_quotes(self, quotes_str):
         return [q.strip() for q in re.split('\r\n-{3,}\r\n', quotes_str) if q.strip()]
@@ -348,8 +374,9 @@ class Snapshill:
         """
         if not self._setup:
             raise Exception("Snapshiller not ready yet!")
-
-        submissions = r.get_new(limit=self.limit)
+        
+        new = r.get_new if hasattr(r, 'get_new') else r.front.new
+        submissions = new(limit=self.limit)
 
         for submission in submissions:
             debugTime = time.time()
@@ -417,12 +444,17 @@ class Snapshill:
         Refreshes the header text for all subreddits.
         """
         self.headers = {"all": Header(self.settings_wiki, "all")}
-        for subreddit in r.get_my_subreddits():
+        if PRAW3:
+            subreddits = r.get_my_subreddits()
+        else:
+            subreddits = r.user.subreddits()
+        for subreddit in subreddits:
             name = subreddit.display_name.lower()
             self.headers[name] = Header(self.settings_wiki, name)
 
     def _login(self):
-        r.login(self.username, self.password)
+        if PRAW3:
+            r.login(self.username, self.password)
 
     def _get_header(self, subreddit):
         """
@@ -442,6 +474,20 @@ class Snapshill:
 
 db = sqlite3.connect(DB_FILE)
 cur = db.cursor()
+
+if PRAW3:
+    r = praw.Reddit(USER_AGENT)
+elif PRAW4:
+    CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID")
+    CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET")
+    USERNAME = os.environ.get("REDDIT_USER")
+    PASSWORD = os.environ.get("REDDIT_PASS")
+    r = praw.Reddit(client_id=CLIENT_ID,
+                    client_secret=CLIENT_SECRET,
+                    user_agent=USER_AGENT,
+                    password=PASSWORD,
+                    username=USERNAME)
+
 
 if __name__ == "__main__":
     username = os.environ.get("REDDIT_USER")
