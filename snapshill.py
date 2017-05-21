@@ -189,7 +189,7 @@ class MegalodonJPArchive(NameMixin):
     def __init__(self, url):
         self.url = url
         self.archived = self.archive()
-        self.error_link = "http://megalodon.jp/?url={}".format(self.url)
+        self.error_link = "http://megalodon.jp/pc/get_simple/decide?url={}".format(self.url)
 
     def archive(self):
         """
