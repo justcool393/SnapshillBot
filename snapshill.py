@@ -210,12 +210,12 @@ class MegalodonJPArchive(NameMixin):
 
 
 class GoldfishArchive(NameMixin):
-    site_name = "ceddit.com"
+    site_name = "snew.github.io"
 
     def __init__(self, url):
         self.url = url
-        self.archived = re.sub(REDDIT_PATTERN, "http://www.ceddit.com/", url)
-        self.error_link = "http://www.ceddit.com/"
+        self.archived = re.sub(REDDIT_PATTERN, "https://snew.github.io", url)
+        self.error_link = "https://snew.github.io/"
 
 
 class ArchiveContainer:
