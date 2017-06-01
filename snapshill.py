@@ -128,7 +128,6 @@ class ArchiveIsArchive(NameMixin):
     def __init__(self, url):
         self.url = url
         self.archived = self.archive()
-        # self.archived = False
         pairs = {"url": self.url, "run": 1}
         self.error_link = "https://archive.is/?" + urlencode(pairs)
 
