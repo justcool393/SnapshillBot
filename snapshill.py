@@ -151,11 +151,6 @@ class ArchiveIsArchive(NameMixin):
 
         return found[0]
 
-    @property
-    def name(self):
-        """Since we can't automatically save archive.is, just add links."""
-        return "_({})_".format(self.site_name)
-
 
 class ArchiveOrgArchive(NameMixin):
     site_name = "archive.org"
