@@ -369,6 +369,9 @@ class Snapshill:
                 finishedURLs = []
 
                 for anchor in links:
+                    if link.attrs["href"].startswith("mailto"):
+                        continue
+
                     if time.time() > debugTime + WARN_TIME and not warned:
                         log.warn("Spent over {} seconds on post (ID: {})".format(
                             WARN_TIME, submission.name))
