@@ -1,18 +1,21 @@
+﻿from gevent import monkey
+monkey.patch_all(thread=False, select=False)
+
 import logging
 import os
 import praw
 import re
 import random
-import requests
 import sqlite3
 import time
 import traceback
 import warnings
 
+import requests
+
 from bs4 import BeautifulSoup
 from html.parser import unescape
 from urllib.parse import urlencode
-from praw.helpers import flatten_tree
 
 from praw.errors import APIException, ClientException, HTTPException
 
@@ -28,12 +31,15 @@ WARN_TIME = 300 # warn after spending 5 minutes on a post
 REDDIT_PATTERN = re.compile("https?://(([A-z]{2})(-[A-z]{2})"
                             "?|beta|i|m|pay|ssl|www)\.?reddit\.com")
 SUBREDDIT_OR_USER = re.compile("/(u|user|r)/[^\/]+/?$")
+PLAIN_SUBREDDIT_OR_USER = re.compile("^/?(u|user|r)/[^\/]+/?$")
 # we have to do some manual ratelimiting because we are tunnelling through
 # some other websites.
 
 RECOVERABLE_EXC = (APIException,
                    ClientException,
                    HTTPException)
+
+ERROR_MESSAGE = "could not auto-archive; click to resubmit!"
 
 
 loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
@@ -48,27 +54,13 @@ warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 r = praw.Reddit(USER_AGENT)
 ignorelist = set()
 
+s = requests.Session()
 
 def get_footer():
     return "*^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({" \
            "contact}))*".format(info=INFO, contact=CONTACT)
 
 
-def should_notify(submission):
-    """
-    Looks for other snapshot bot comments in the comment chain and doesn't
-    post if they do.
-    :param submission: Submission to check
-    :return: If we should comment or not
-    """
-    cur.execute("SELECT * FROM links WHERE id=?", (submission.name,))
-    if cur.fetchone():
-        return False
-    submission.replace_more_comments()
-    for comment in flatten_tree(submission.comments):
-        if comment.author and comment.author.name in ignorelist:
-            return False
-    return True
 
 
 def ratelimit(url):
@@ -91,8 +83,9 @@ def fix_url(url):
     :param url: URL to change.
     :return: Returns a fixed URL
     """
-    if url.startswith("r/") or url.startswith("u/"):
-        url = "http://www.reddit.com" + url
+    if re.match(PLAIN_SUBREDDIT_OR_USER, url):
+        url = "http://www.reddit.com/" + url
+
     return re.sub(REDDIT_PATTERN, "http://www.reddit.com", url)
 
 
@@ -111,25 +104,37 @@ def log_error(e):
                                           traceback.format_exc()))
 
 
-class NameMixin:
+class Archive:
     site_name = None
 
-    @property
+    def __init__(self, url):
+        self.url = url
+        self.archived = None
+
+    def archive(self):
+        return None
+
     def name(self):
         if self.archived:
             return self.site_name
         else:
             return "_{}\*_".format(self.site_name)
 
+    def link(self):
+        return self.archived or self.error_message()
 
-class ArchiveIsArchive(NameMixin):
+    def resubmit_link(self):
+        return None
+
+    def error_message(self):
+        return "{} \"{}\"".format(self.resubmit_link(), ERROR_MESSAGE)
+
+    def format(self):
+        return "[{}]({})".format(self.name(), self.link())
+
+
+class ArchiveIsArchive(Archive):
     site_name = "archive.is"
-
-    def __init__(self, url):
-        self.url = url
-        self.archived = self.archive()
-        pairs = {"url": self.url, "run": 1}
-        self.error_link = "https://archive.is/?" + urlencode(pairs)
 
     def archive(self):
         """
@@ -140,7 +145,7 @@ class ArchiveIsArchive(NameMixin):
         pairs = {"url": self.url}
 
         try:
-            res = requests.post("https://archive.is/submit/", pairs, verify=False)
+            res = s.post("https://archive.is/submit/", pairs, verify=False)
         except RECOVERABLE_EXC:
             return False
 
@@ -151,14 +156,13 @@ class ArchiveIsArchive(NameMixin):
 
         return found[0]
 
+    def error_link(self):
+        pairs = {"url": self.url, "run": 1}
+        return "https://archive.is/?" + urlencode(pairs)
 
-class ArchiveOrgArchive(NameMixin):
+
+class ArchiveOrgArchive(Archive):
     site_name = "archive.org"
-
-    def __init__(self, url):
-        self.url = url
-        self.archived = self.archive()
-        self.error_link = "https://web.archive.org/save/" + self.url
 
     def archive(self):
         """
@@ -168,7 +172,7 @@ class ArchiveOrgArchive(NameMixin):
         we cannot archive this page.
         """
         try:
-            requests.get("https://web.archive.org/save/" + self.url)
+            s.get("https://web.archive.org/save/" + self.url)
         except RECOVERABLE_EXC as e:
             if isinstance(e, HTTPError) and e.status_code == 403:
                 return None
@@ -176,14 +180,12 @@ class ArchiveOrgArchive(NameMixin):
         date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
         return "https://web.archive.org/" + date + "/" + self.url
 
+    def error_link(self):
+        return "https://web.archive.org/save/" + self.url
 
-class MegalodonJPArchive(NameMixin):
+
+class MegalodonJPArchive(Archive):
     site_name = "megalodon.jp"
-
-    def __init__(self, url):
-        self.url = url
-        self.archived = self.archive()
-        self.error_link = "http://megalodon.jp/pc/get_simple/decide?url={}".format(self.url)
 
     def archive(self):
         """
@@ -193,23 +195,26 @@ class MegalodonJPArchive(NameMixin):
         :return: URL of the archive, or False if an error occurred.
         """
         pairs = {"url": self.url}
+
         try:
-            res = requests.post("http://megalodon.jp/pc/get_simple/decide",
-                                pairs)
+            res = s.post("http://megalodon.jp/pc/get_simple/decide", pairs)
         except RECOVERABLE_EXC:
             return False
+
         if res.url == "http://megalodon.jp/pc/get_simple/decide":
             return False
+
         return res.url
 
+    def error_link(self):
+        return "http://megalodon.jp/pc/get_simple/decide?url={}".format(self.url)
 
-class GoldfishArchive(NameMixin):
+
+class GoldfishArchive(Archive):
     site_name = "snew.github.io"
 
-    def __init__(self, url):
-        self.url = url
-        self.archived = re.sub(REDDIT_PATTERN, "https://snew.github.io", url)
-        self.error_link = "https://snew.github.io/"
+    def archive(self):
+        return re.sub(REDDIT_PATTERN, "https://snew.github.io", self.url)
 
 class RemovedditArchive(NameMixin):
     site_name = "removeddit.com"
@@ -219,9 +224,9 @@ class RemovedditArchive(NameMixin):
         self.archived = re.sub(REDDIT_PATTERN, "https://www.removeddit.com", url)
         self.error_link = "https://www.removeddit.com/"
 
-class ArchiveContainer:
+class Link:
     def __init__(self, url, text):
-        log.debug("Creating ArchiveContainer")
+        log.debug("Creating Link {}".format(url))
         self.url = url
         self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
         self.archives = [ArchiveOrgArchive(url),
@@ -231,6 +236,52 @@ class ArchiveContainer:
             self.archives.append(RemovedditArchive(url))
 
         self.archives.append(ArchiveIsArchive(url))
+
+    def format(self, no=1):
+        archives = ", ".join(
+            archive.format() for archive in self.archives if archive.archived is not None
+        )
+
+        return "{}. [{}]({}) - {}".format(no, self.text, self.url, archives)
+
+
+class Post:
+    def __init__(self, submission):
+        self.submission = submission
+        self.links = []
+
+    def should_notify(self):
+        """
+        Looks for other snapshot bot comments in the comment chain and doesn't
+        post if they do.
+        :param submission: Submission to check
+        :return: If we should comment or not
+        """
+        cur.execute("SELECT * FROM links WHERE id=?", (self.name,))
+
+        if cur.fetchone():
+            return False
+
+        return True
+
+    @property
+    def name(self):
+        return self.submission.name
+
+    @property
+    def permalink(self):
+        return self.submission.permalink
+
+    def format_links(self):
+        lines = []
+
+        for i, link in enumerate(self.links, 1):
+            lines.append(link.format(i))
+
+        return "\n".join(lines)
+
+    def add_comment(self, *args, **kwargs):
+        self.submission.add_comment(*args, **kwargs)
 
 
 class Notification:
@@ -249,6 +300,7 @@ class Notification:
         """
         try:
             comment = self._build()
+
             if len(comment) > 9999:
                 link = self.post.permalink
                 submission = r.submit("SnapshillBotEx", "Archives for " + link,
@@ -262,9 +314,11 @@ class Notification:
                 log.info("Posted a comment and new submission")
             else:
                 comment = self.post.add_comment(comment)
+
         except RECOVERABLE_EXC as e:
             log_error(e)
             return
+
         cur.execute("INSERT INTO links (id, reply) VALUES (?, ?)",
                     (self.post.name, comment.name))
 
@@ -350,11 +404,10 @@ class Snapshill:
         if not self._setup:
             raise Exception("Snapshiller not ready yet!")
 
-        submissions = r.get_new(limit=self.limit)
+        raw_subs = r.get_new(limit=self.limit)
 
-        for submission in submissions:
-            debugTime = time.time()
-            warned = False
+        for raw_sub in raw_subs:
+            submis
 
             log.debug("Found submission.\n" + submission.permalink)
 
@@ -376,12 +429,6 @@ class Snapshill:
                 finishedURLs = []
 
                 for anchor in links:
-                    if time.time() > debugTime + WARN_TIME and not warned:
-                        log.warn("Spent over {} seconds on post (ID: {})".format(
-                            WARN_TIME, submission.name))
-
-                        warned = True
-
                     log.debug("Found link in text post...")
 
                     url = fix_url(anchor['href'])
@@ -394,7 +441,10 @@ class Snapshill:
 
                     archives.append(ArchiveContainer(url, anchor.contents[0]))
                     finishedURLs.append(url)
-                    ratelimit(url)
+                    # ratelimit(url)
+
+            for container in archives:
+                container.run()
 
             Notification(submission, self._get_header(submission.subreddit),
                          archives).notify()
@@ -418,9 +468,9 @@ class Snapshill:
         Refreshes the header text for all subreddits.
         """
         self.headers = {"all": Header(self.settings_wiki, "all")}
-        for subreddit in r.get_my_subreddits():
-            name = subreddit.display_name.lower()
-            self.headers[name] = Header(self.settings_wiki, name)
+        # for subreddit in r.get_my_subreddits():
+        #     name = subreddit.display_name.lower()
+        #     self.headers[name] = Header(self.settings_wiki, name)
 
     def _login(self):
         r.login(self.username, self.password)
