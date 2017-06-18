@@ -1,4 +1,6 @@
-﻿from gevent import monkey
+﻿import gevent
+from gevent import monkey
+from gevent.pool import Pool
 monkey.patch_all(thread=False, select=False)
 
 import logging
@@ -15,95 +17,109 @@ import requests
 
 from bs4 import BeautifulSoup
 from html.parser import unescape
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urljoin
 
-from praw.errors import APIException, ClientException, HTTPException
+from praw.exceptions import APIException, ClientException
+from prawcore.exceptions import ResponseException
 
-USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v1.3"
+USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v2.0"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
+
 ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
 MEGALODON_JP_FORMAT = "%Y-%m%d-%H%M-%S"
+
 DB_FILE = os.environ.get("DATABASE", "snapshill.sqlite3")
-LEN_MAX = 35
-REDDIT_API_WAIT = 2
-WARN_TIME = 300 # warn after spending 5 minutes on a post
+
+CLIENT_ID = os.environ.get("CLIENT_ID")
+CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
+USERNAME = os.environ.get("REDDIT_USER")
+PASSWORD = os.environ.get("REDDIT_PASS")
+
+REDDIT_LOCATION = "http://www.reddit.com/"
+EXTENDED_POST_SUBREDDIT = "SnapshillBotEx"
+
 REDDIT_PATTERN = re.compile("https?://(([A-z]{2})(-[A-z]{2})"
-                            "?|beta|i|m|pay|ssl|www)\.?reddit\.com")
-SUBREDDIT_OR_USER = re.compile("/(u|user|r)/[^\/]+/?$")
-PLAIN_SUBREDDIT_OR_USER = re.compile("^/?(u|user|r)/[^\/]+/?$")
-# we have to do some manual ratelimiting because we are tunnelling through
-# some other websites.
+                            "?|beta|i|m|pay|ssl|www)\.?reddit\.com/?")
+SUBREDDIT_OR_USER = re.compile("/?(u|user|r)/[^\/]+/?$")
+
+MAX_COMMENT_LENGTH = 10000
+MAX_TITLE_LENGTH = 35
 
 RECOVERABLE_EXC = (APIException,
                    ClientException,
-                   HTTPException)
+                   ResponseException)
 
 ERROR_MESSAGE = "could not auto-archive; click to resubmit!"
 
+REDDIT_WAIT_TIME = 2  # Sites can perform one reddit lookup per two seconds.
 
 loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
-
 logging.basicConfig(level=loglevel,
                     format="[%(asctime)s] [%(levelname)s] %(message)s")
-
 log = logging.getLogger("snapshill")
 logging.getLogger("requests").setLevel(loglevel)
 warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
-r = praw.Reddit(USER_AGENT)
-ignorelist = set()
-
+r = praw.Reddit(client_id=CLIENT_ID,
+                client_secret=CLIENT_SECRET,
+                user_agent=USER_AGENT,
+                username=USERNAME,
+                password=PASSWORD)
 s = requests.Session()
 
+#####################
+# Utility functions #
+#####################
 def get_footer():
     return "*^(I am a bot.) ^\([*Info*]({info}) ^/ ^[*Contact*]({" \
            "contact}))*".format(info=INFO, contact=CONTACT)
 
-
-
-
-def ratelimit(url):
-    if len(re.findall(REDDIT_PATTERN, url)) == 0:
-        return
-    time.sleep(REDDIT_API_WAIT)
-
-
-def refresh_ignore_list():
-    ignorelist.clear()
-    ignorelist.add(r.user.name)
-    for friend in r.user.get_friends():
-        ignorelist.add(friend.name)
-
-
-def fix_url(url):
+def should_notify(name):
     """
-    Change language code links, mobile links and beta links, SSL links and
-    username/subreddit mentions
-    :param url: URL to change.
-    :return: Returns a fixed URL
+    Looks for other snapshot bot comments in the comment chain and doesn't
+    post if they do.
+    :param submission: Submission to check
+    :return: If we should comment or not
     """
-    if re.match(PLAIN_SUBREDDIT_OR_USER, url):
-        url = "http://www.reddit.com/" + url
+    cur.execute("SELECT * FROM links WHERE id=?", (name,))
 
-    return re.sub(REDDIT_PATTERN, "http://www.reddit.com", url)
+    if cur.fetchone():
+        return False
 
+    return True
 
-def skip_url(url):
-    """
-    Skip naked username mentions and subreddit links.
-    """
-    if REDDIT_PATTERN.match(url) and SUBREDDIT_OR_USER.search(url):
-        return True
-
-    return False
-
+def store_notification(post_id, reply_id):
+    cur.execute("INSERT INTO links (id, reply) VALUES (?, ?)",
+                (post_id, reply_id))
+    db.commit()
 
 def log_error(e):
     log.error("Unexpected {}:\n{}".format(e.__class__.__name__,
                                           traceback.format_exc()))
 
 
+################
+# IO Functions #
+################
+def create_archive(archive):
+    return gevent.spawn(archive.archive)
+
+def create_reddit_archives(link):
+    archives = []
+
+    for archive in link.archives:
+        archives.append(gevent.spawn(archive.archive))
+
+    gevent.joinall(archives)
+
+    # We ratelimit other sites when they visit reddit.
+    gevent.sleep(REDDIT_WAIT_TIME)
+
+
+###########
+# Classes #
+###########
 class Archive:
     site_name = None
 
@@ -112,7 +128,10 @@ class Archive:
         self.archived = None
 
     def archive(self):
-        return None
+        log.debug("Archiving {} with {}".format(self.url, self.site_name))
+        self.archived = self._archive()
+
+        return self.archived
 
     def name(self):
         if self.archived:
@@ -129,14 +148,14 @@ class Archive:
     def error_message(self):
         return "{} \"{}\"".format(self.resubmit_link(), ERROR_MESSAGE)
 
-    def format(self):
+    def build(self):
         return "[{}]({})".format(self.name(), self.link())
 
 
 class ArchiveIsArchive(Archive):
     site_name = "archive.is"
 
-    def archive(self):
+    def _archive(self):
         """
         Archives to archive.is. Returns a 200, and we have to find the
         JavaScript redirect through a regex in the response text.
@@ -164,7 +183,7 @@ class ArchiveIsArchive(Archive):
 class ArchiveOrgArchive(Archive):
     site_name = "archive.org"
 
-    def archive(self):
+    def _archive(self):
         """
         Archives to archive.org. The website gives a 403 Forbidden when the
         archive cannot be generated (because it follows robots.txt rules)
@@ -187,7 +206,7 @@ class ArchiveOrgArchive(Archive):
 class MegalodonJPArchive(Archive):
     site_name = "megalodon.jp"
 
-    def archive(self):
+    def _archive(self):
         """
         Archives to megalodon.jp. The website gives a 302 redirect when we
         POST to the webpage. We can't guess the link because a 1 second
@@ -213,7 +232,7 @@ class MegalodonJPArchive(Archive):
 class GoldfishArchive(Archive):
     site_name = "snew.github.io"
 
-    def archive(self):
+    def _archive(self):
         return re.sub(REDDIT_PATTERN, "https://snew.github.io", self.url)
 
 class RemovedditArchive(NameMixin):
@@ -225,44 +244,75 @@ class RemovedditArchive(NameMixin):
         self.error_link = "https://www.removeddit.com/"
 
 class Link:
-    def __init__(self, url, text):
+    def __init__(self, url, title):
         log.debug("Creating Link {}".format(url))
+
         self.url = url
-        self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
-        self.archives = [ArchiveOrgArchive(url),
-                         MegalodonJPArchive(url)]
+        self.fixed_url = self.fix_url(url)
 
-        if re.match(REDDIT_PATTERN, url):
-            self.archives.append(RemovedditArchive(url))
+        self.title = title
 
-        self.archives.append(ArchiveIsArchive(url))
+        if len(self.title) > (MAX_TITLE_LENGTH + 3):
+            self.title = title[:MAX_TITLE_LENGTH] + "..."
 
-    def format(self, no=1):
+        self.archives = [ArchiveOrgArchive(self.fixed_url),
+                         MegalodonJPArchive(self.fixed_url)]
+
+        if self.is_reddit():
+            self.archives.append(GoldfishArchive(self.fixed_url))
+
+        self.archives.append(ArchiveIsArchive(self.fixed_url))
+
+    def fix_url(self, url):
+        # Link on reddit
+        if SUBREDDIT_OR_USER.match(url):
+            url = urljoin(REDDIT_LOCATION, url)
+        elif REDDIT_PATTERN.match(url):
+            url = REDDIT_PATTERN.sub(REDDIT_LOCATION, url)
+
+        return url
+
+    def is_reddit(self):
+        return self.fixed_url.startswith("http://www.reddit.com")
+
+    def is_subreddit_or_user(self):
+        return self.is_reddit() and SUBREDDIT_OR_USER.search(self.fixed_url)
+
+    def build(self, no=1):
         archives = ", ".join(
-            archive.format() for archive in self.archives if archive.archived is not None
+            archive.build() for archive in self.archives if archive.archived is not None
         )
 
-        return "{}. [{}]({}) - {}".format(no, self.text, self.url, archives)
+        return "{}. [{}]({}) - {}".format(no, self.title, self.url, archives)
 
 
 class Post:
     def __init__(self, submission):
         self.submission = submission
         self.links = []
+        self._formatted = None
 
-    def should_notify(self):
-        """
-        Looks for other snapshot bot comments in the comment chain and doesn't
-        post if they do.
-        :param submission: Submission to check
-        :return: If we should comment or not
-        """
-        cur.execute("SELECT * FROM links WHERE id=?", (self.name,))
+        self.links.append(Link(self.submission.url, self.submission.title))
 
-        if cur.fetchone():
-            return False
+        if self.submission.selftext_html:
+            self.links += self.parse_links(submission.selftext_html)
 
-        return True
+    def parse_links(self, body):
+        anchors = BeautifulSoup(unescape(body)).find_all("a")
+        seen_urls = []
+        links = []
+
+        for anchor in anchors:
+            log.debug("Found link in text post...")
+            link = Link(anchor.attrs['href'], anchor.text)
+
+            if link.fixed_url in seen_urls or link.is_subreddit_or_user():
+                continue
+
+            seen_urls.append(link.fixed_url)
+            links.append(link)
+
+        return links
 
     @property
     def name(self):
@@ -272,24 +322,29 @@ class Post:
     def permalink(self):
         return self.submission.permalink
 
-    def format_links(self):
+    def build_links(self):
         lines = []
 
         for i, link in enumerate(self.links, 1):
-            lines.append(link.format(i))
+            lines.append(link.build(i))
 
         return "\n".join(lines)
 
+    def build(self):
+        self._formatted = self.build_links()
+
+        return self._formatted
+
     def add_comment(self, *args, **kwargs):
-        self.submission.add_comment(*args, **kwargs)
+        self.submission.reply(*args, **kwargs)
 
 
 class Notification:
-
-    def __init__(self, post, header, links):
+    def __init__(self, post, header):
         self.post = post
         self.header = header
-        self.links = links
+        self.reply = None
+        self._formatted = None
 
     def notify(self):
         """
@@ -298,68 +353,56 @@ class Notification:
         /r/SnapshillBotEx and then make a comment linking to it.
         :return Nothing
         """
+        log.debug("Creating notification for {}".format(self.post.name))
+
+        self.build()
+
         try:
-            comment = self._build()
-
-            if len(comment) > 9999:
-                link = self.post.permalink
-                submission = r.submit("SnapshillBotEx", "Archives for " + link,
-                                      text=comment[:39999],
-                                      raise_captcha_exception=True)
-                submission.add_comment("The original submission can be found "
-                                       "here:\n\n" + link)
-                comment = self.post.add_comment("Wow, that's a lot of links! The "
-                                          "snapshots can be [found here.](" +
-                                          submission.url + ")\n\n" + get_footer())
-                log.info("Posted a comment and new submission")
+            if self.can_comment():
+                comment = self.new_comment()
             else:
-                comment = self.post.add_comment(comment)
+                comment = self.new_post()
 
+            self.reply = comment.name
         except RECOVERABLE_EXC as e:
             log_error(e)
             return
 
-        cur.execute("INSERT INTO links (id, reply) VALUES (?, ?)",
-                    (self.post.name, comment.name))
+        return comment
 
-    def _build(self):
-        parts = [self.header.get(), "Snapshots:"]
-        format = "[{name}]({archive})"
+    def build(self):
+        parts = [self.header.get(), "Snapshots:", self.post.build(), get_footer()]
+        self._formatted = "\n\n".join(parts)
 
-        for i, link in enumerate(self.links, 1):
-            subparts = []
-            log.debug("Found link")
+        return self._formatted
 
-            for archive in link.archives:
-                if archive.archived is None:
-                    continue
+    def can_comment(self):
+        return len(self._formatted) < MAX_COMMENT_LENGTH
 
-                archive_link = archive.archived
+    def new_post(self):
+        title = "Archives for {}".format(self.post.permalink)
 
-                if not archive_link:
-                    log.debug("Not found, using error link")
-                    archive_link = archive.error_link + ' "could not ' \
-                                                        'auto-archive; ' \
-                                                        'click to resubmit it!"'
-                else:
-                    log.debug("Found archive")
+        post = r.subreddit(EXTENDED_POST_SUBREDDIT).submit(title, selftext=self._formatted)
+        comment = post.reply(
+            "The original submission can be found here:\n\n{}".format(self.post.permalink)
+        )
 
-                subparts.append(format.format(name=archive.name,
-                                              archive=archive_link))
+        comment = self.post.add_comment(
+            "Wow, that's a lot of links! The snapshots"
+            "can be [found here.]({})\n\n{}".format(post.url, get_footer())
+        )
 
-            parts.append("{}. {} - {}".format(i, link.text, ", ".join(subparts)))
+        return comment
 
-        parts.append(get_footer())
-
-        return "\n\n".join(parts)
+    def new_comment(self):
+        return self.post.add_comment(self._formatted)
 
 
 class Header:
-
     def __init__(self, settings_wiki, subreddit):
         self.subreddit = subreddit
         self.texts = []
-        self._settings = r.get_subreddit(settings_wiki)
+        self._settings = r.subreddit(settings_wiki)
 
         try:
             content = self._get_wiki_content()
@@ -381,17 +424,14 @@ class Header:
         return "" if not self.texts else random.choice(self.texts)
 
     def _get_wiki_content(self):
-        return self._settings.get_wiki_page("extxt/" + self.subreddit.lower()).content_md
+        return self._settings.wiki["extxt/" + self.subreddit.lower()].content_md
 
     def _parse_quotes(self, quotes_str):
         return [q.strip() for q in re.split('\r\n-{3,}\r\n', quotes_str) if q.strip()]
 
 
 class Snapshill:
-
-    def __init__(self, username, password, settings_wiki, limit=25):
-        self.username = username
-        self.password = password
+    def __init__(self, settings_wiki, limit=25):
         self.limit = limit
         self.settings_wiki = settings_wiki
         self.headers = {}
@@ -404,76 +444,60 @@ class Snapshill:
         if not self._setup:
             raise Exception("Snapshiller not ready yet!")
 
-        raw_subs = r.get_new(limit=self.limit)
+        submissions = r.front.new(limit=self.limit)
 
-        for raw_sub in raw_subs:
-            submis
+        for submission in submissions:
+            post = Post(submission)
 
-            log.debug("Found submission.\n" + submission.permalink)
+            # We only want to create the archives from one reddit link at a time.
+            reddit_pool = Pool(1)
 
-            if not should_notify(submission):
+            log.debug("Found submission: {}".format(post.permalink))
+
+            if not should_notify(post.name):
                 log.debug("Skipping.")
                 continue
 
-            archives = [ArchiveContainer(fix_url(submission.url),
-                                         "*This Post*")]
-            if submission.is_self and submission.selftext_html is not None:
-                log.debug("Found text post...")
+            for link in post.links:
+                if link.is_reddit():
+                    reddit_pool.spawn(create_reddit_archives, link)
+                else:
+                    for archive in link.archives:
+                        create_archive(archive)
 
-                links = BeautifulSoup(unescape(
-                    submission.selftext_html)).find_all("a")
+            gevent.wait()
 
-                if not len(links):
-                    continue
+            comment = Notification(post, self._get_header(submission.subreddit)).notify()
 
-                finishedURLs = []
-
-                for anchor in links:
-                    log.debug("Found link in text post...")
-
-                    url = fix_url(anchor['href'])
-
-                    if skip_url(url):
-                        continue
-
-                    if url in finishedURLs:
-                        continue #skip for sanity
-
-                    archives.append(ArchiveContainer(url, anchor.contents[0]))
-                    finishedURLs.append(url)
-                    # ratelimit(url)
-
-            for container in archives:
-                container.run()
-
-            Notification(submission, self._get_header(submission.subreddit),
-                         archives).notify()
-            db.commit()
+            if comment:
+                store_notification(post.name, comment.name)
 
     def setup(self):
         """
         Logs into reddit and refreshs the header text and ignore list.
         """
-        self._login()
-        self.refresh_headers()
-        refresh_ignore_list()
+        self.refresh()
         self._setup = True
 
     def quit(self):
         self.headers = {}
         self._setup = False
 
-    def refresh_headers(self):
+    def refresh(self):
         """
-        Refreshes the header text for all subreddits.
+        Refreshes the header text for all subreddits, unsubscribing from them
+        if the bot has been banned from them.
         """
         self.headers = {"all": Header(self.settings_wiki, "all")}
-        # for subreddit in r.get_my_subreddits():
-        #     name = subreddit.display_name.lower()
-        #     self.headers[name] = Header(self.settings_wiki, name)
 
-    def _login(self):
-        r.login(self.username, self.password)
+        for subreddit in r.user.subreddits():
+            if subreddit.user_is_banned:
+                log.debug("Banned from {}: unsubscribing!", subreddit)
+                subreddit.unsubscribe()
+                continue
+
+            name = subreddit.display_name.lower()
+            self.headers[name] = Header(self.settings_wiki, name)
 
     def _get_header(self, subreddit):
         """
@@ -495,14 +519,12 @@ db = sqlite3.connect(DB_FILE)
 cur = db.cursor()
 
 if __name__ == "__main__":
-    username = os.environ.get("REDDIT_USER")
-    password = os.environ.get("REDDIT_PASS")
     limit = int(os.environ.get("LIMIT", 25))
     wait = int(os.environ.get("WAIT", 5))
     refresh = int(os.environ.get("REFRESH", 1800))
 
     log.info("Starting...")
-    snapshill = Snapshill(username, password, "SnapshillBot", limit)
+    snapshill = Snapshill("SnapshillBot", limit)
     snapshill.setup()
 
     log.info("Started.")
@@ -518,8 +540,7 @@ if __name__ == "__main__":
                 # on delays).
                 if cycles > (refresh / wait) / 2:
                     log.info("Reloading header text and ignore list...")
-                    refresh_ignore_list()
-                    snapshill.refresh_headers()
+                    snapshill.refresh()
                     cycles = 0
             except RECOVERABLE_EXC as e:
                 log_error(e)
@@ -527,6 +548,7 @@ if __name__ == "__main__":
             time.sleep(wait)
     except KeyboardInterrupt:
         pass
+
     snapshill.quit()
     db.close()
     exit(0)
