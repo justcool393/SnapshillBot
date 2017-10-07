@@ -211,13 +211,13 @@ class GoldfishArchive(NameMixin):
         self.archived = re.sub(REDDIT_PATTERN, "https://snew.github.io", url)
         self.error_link = "https://snew.github.io/"
 
-class RedditmovedArchive(NameMixin):
-    site_name = "redditmoved.com"
+class RemovedditArchive(NameMixin):
+    site_name = "removeddit.com"
 
     def __init__(self, url):
         self.url = url
-        self.archived = re.sub(REDDIT_PATTERN, "https://www.redditmoved.com", url)
-        self.error_link = "https://www.redditmoved.com/"
+        self.archived = re.sub(REDDIT_PATTERN, "https://www.removeddit.com", url)
+        self.error_link = "https://www.removeddit.com/"
 
 class ArchiveContainer:
     def __init__(self, url, text):
@@ -228,7 +228,7 @@ class ArchiveContainer:
                          MegalodonJPArchive(url)]
 
         if re.match(REDDIT_PATTERN, url):
-            self.archives.append(RedditmovedArchive(url))
+            self.archives.append(RemovedditArchive(url))
 
         self.archives.append(ArchiveIsArchive(url))
 
