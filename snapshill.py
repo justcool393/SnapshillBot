@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import os
 import praw
 import re
@@ -229,7 +229,6 @@ class ArchiveContainer:
 
         if re.match(REDDIT_PATTERN, url):
             self.archives.append(RedditmovedArchive(url))
-            self.archives.append(GoldfishArchive(url))
 
         self.archives.append(ArchiveIsArchive(url))
 
