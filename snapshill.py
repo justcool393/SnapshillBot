@@ -104,11 +104,14 @@ def log_error(e):
 ################
 # IO Functions #
 ################
-def handle_post(post, snapshillbot, reddit_pool = None):
+def handle_post(post, snapshillbot, reddit_pool = None, notify_pool = None):
     jobs = []
 
     if reddit_pool is None:
         reddit_pool = Pool(1)
+
+    if notify_pool is None:
+        notify_pool = Pool(1)
 
     for link in post.links:
         if link.is_reddit():
@@ -118,11 +121,7 @@ def handle_post(post, snapshillbot, reddit_pool = None):
                 jobs.append(create_archive(archive))
 
     gevent.joinall(jobs)
-
-    comment = Notification(post, snapshillbot.get_header(post.submission.subreddit)).notify()
-
-    if comment:
-        store_notification(post.name, comment.name)
+    gevent.wait(notify_pool.spawn(notify, post, snapshillbot))
 
 def create_archive(archive):
     return gevent.spawn(archive.archive)
@@ -137,6 +136,12 @@ def create_reddit_archives(link):
 
     # We ratelimit other sites when they visit reddit.
     gevent.sleep(REDDIT_WAIT_TIME)
+
+def notify(post, snapshill):
+    comment = Notification(post, snapshillbot.get_header(post.submission.subreddit)).notify()
+
+    if comment:
+        store_notification(post.name, comment.name)
 
 
 ###########
@@ -470,6 +475,7 @@ class Snapshill:
         submissions = r.front.new(limit=self.limit)
         post_pool = Pool(4)
         reddit_pool = Pool(1)
+        notify_pool = Pool(1)
 
         for submission in submissions:
             post = Post(submission)
@@ -481,7 +487,7 @@ class Snapshill:
                 continue
 
             count += 1
-            post_pool.spawn(handle_post, post, self, reddit_pool)
+            post_pool.spawn(handle_post, post, self, reddit_pool, notify_pool)
 
         gevent.wait()
 
