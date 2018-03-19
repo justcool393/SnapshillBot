@@ -6,3 +6,7 @@
 /.idea
 /.idea
 /.idea/scopes
+lib
+bin
+share
+include

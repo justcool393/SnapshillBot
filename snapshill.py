@@ -256,19 +256,12 @@ class MegalodonJPArchive(Archive):
         return "http://megalodon.jp/pc/get_simple/decide?url={}".format(self.url)
 
 
-class GoldfishArchive(Archive):
-    site_name = "removeddit"
+class RemovedditArchive(Archive):
+    site_name = "removeddit.com"
 
     def _archive(self):
         return re.sub(REDDIT_PATTERN, "https://removeddit.com", self.url)
 
-class RemovedditArchive(NameMixin):
-    site_name = "removeddit.com"
-
-    def __init__(self, url):
-        self.url = url
-        self.archived = re.sub(REDDIT_PATTERN, "https://www.removeddit.com", url)
-        self.error_link = "https://www.removeddit.com/"
 
 class Link:
     def __init__(self, url, title):
@@ -286,7 +279,7 @@ class Link:
                          MegalodonJPArchive(self.fixed_url)]
 
         if self.is_reddit():
-            self.archives.append(GoldfishArchive(self.fixed_url))
+            self.archives.append(RemovedditArchive(self.fixed_url))
 
         self.archives.append(ArchiveIsArchive(self.fixed_url))
 
