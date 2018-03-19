@@ -137,7 +137,7 @@ def create_reddit_archives(link):
     # We ratelimit other sites when they visit reddit.
     gevent.sleep(REDDIT_WAIT_TIME)
 
-def notify(post, snapshill):
+def notify(post, snapshillbot):
     comment = Notification(post, snapshillbot.get_header(post.submission.subreddit)).notify()
 
     if comment:
