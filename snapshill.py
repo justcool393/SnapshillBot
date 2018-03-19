@@ -3,6 +3,8 @@ from gevent import monkey
 from gevent.pool import Pool
 monkey.patch_all(thread=False, select=False)
 
+import timeit
+
 import logging
 import os
 import praw
@@ -102,6 +104,26 @@ def log_error(e):
 ################
 # IO Functions #
 ################
+def handle_post(post, snapshillbot, reddit_pool = None):
+    jobs = []
+
+    if reddit_pool is None:
+        reddit_pool = Pool(1)
+
+    for link in post.links:
+        if link.is_reddit():
+            jobs.append(reddit_pool.spawn(create_reddit_archives, link))
+        else:
+            for archive in link.archives:
+                jobs.append(create_archive(archive))
+
+    gevent.joinall(jobs)
+
+    comment = Notification(post, snapshillbot.get_header(post.submission.subreddit)).notify()
+
+    if comment:
+        store_notification(post.name, comment.name)
+
 def create_archive(archive):
     return gevent.spawn(archive.archive)
 
@@ -175,7 +197,7 @@ class ArchiveIsArchive(Archive):
 
         return found[0]
 
-    def error_link(self):
+    def resubmit_link(self):
         pairs = {"url": self.url, "run": 1}
         return "https://archive.is/?" + urlencode(pairs)
 
@@ -193,13 +215,13 @@ class ArchiveOrgArchive(Archive):
         try:
             s.get("https://web.archive.org/save/" + self.url)
         except RECOVERABLE_EXC as e:
-            if isinstance(e, HTTPError) and e.status_code == 403:
-                return None
             return False
+
         date = time.strftime(ARCHIVE_ORG_FORMAT, time.gmtime())
+
         return "https://web.archive.org/" + date + "/" + self.url
 
-    def error_link(self):
+    def resubmit_link(self):
         return "https://web.archive.org/save/" + self.url
 
 
@@ -213,6 +235,11 @@ class MegalodonJPArchive(Archive):
         discrepancy will give an error when trying to view it.
         :return: URL of the archive, or False if an error occurred.
         """
+
+        # Megalodon.jp sucks and errors out every single time. We'll just let
+        # users archive it themselves if they want to.
+        return False
+
         pairs = {"url": self.url}
 
         try:
@@ -225,15 +252,15 @@ class MegalodonJPArchive(Archive):
 
         return res.url
 
-    def error_link(self):
+    def resubmit_link(self):
         return "http://megalodon.jp/pc/get_simple/decide?url={}".format(self.url)
 
 
 class GoldfishArchive(Archive):
-    site_name = "snew.github.io"
+    site_name = "removeddit"
 
     def _archive(self):
-        return re.sub(REDDIT_PATTERN, "https://snew.github.io", self.url)
+        return re.sub(REDDIT_PATTERN, "https://removeddit.com", self.url)
 
 class RemovedditArchive(NameMixin):
     site_name = "removeddit.com"
@@ -336,7 +363,7 @@ class Post:
         return self._formatted
 
     def add_comment(self, *args, **kwargs):
-        self.submission.reply(*args, **kwargs)
+        return self.submission.reply(*args, **kwargs)
 
 
 class Notification:
@@ -444,13 +471,15 @@ class Snapshill:
         if not self._setup:
             raise Exception("Snapshiller not ready yet!")
 
+        start = timeit.default_timer()
+        count = 0
+
         submissions = r.front.new(limit=self.limit)
+        post_pool = Pool(4)
+        reddit_pool = Pool(1)
 
         for submission in submissions:
             post = Post(submission)
-
-            # We only want to create the archives from one reddit link at a time.
-            reddit_pool = Pool(1)
 
             log.debug("Found submission: {}".format(post.permalink))
 
@@ -458,19 +487,14 @@ class Snapshill:
                 log.debug("Skipping.")
                 continue
 
-            for link in post.links:
-                if link.is_reddit():
-                    reddit_pool.spawn(create_reddit_archives, link)
-                else:
-                    for archive in link.archives:
-                        create_archive(archive)
+            count += 1
+            post_pool.spawn(handle_post, post, self, reddit_pool)
 
-            gevent.wait()
+        gevent.wait()
 
-            comment = Notification(post, self._get_header(submission.subreddit)).notify()
+        stop = timeit.default_timer()
 
-            if comment:
-                store_notification(post.name, comment.name)
+        log.debug("Handled {} submissions in {} seconds".format(count, stop - start))
 
     def setup(self):
         """
@@ -492,14 +516,14 @@ class Snapshill:
 
         for subreddit in r.user.subreddits():
             if subreddit.user_is_banned:
-                log.debug("Banned from {}: unsubscribing!", subreddit)
+                log.debug("Banned from {}: unsubscribing!".format(subreddit))
                 subreddit.unsubscribe()
                 continue
 
             name = subreddit.display_name.lower()
             self.headers[name] = Header(self.settings_wiki, name)
 
-    def _get_header(self, subreddit):
+    def get_header(self, subreddit):
         """
         Gets the correct Header object for this subreddit. If the one for 'all'
         is not "!ignore", then this one will always be returned.
