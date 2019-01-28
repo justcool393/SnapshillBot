@@ -16,7 +16,7 @@ from praw.helpers import flatten_tree
 
 from praw.errors import APIException, ClientException, HTTPException
 
-USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v1.3"
+USER_AGENT = "Archives to archive.today and archive.org (/r/SnapshillBot) v1.3"
 INFO = "/r/SnapshillBot"
 CONTACT = "/message/compose?to=\/r\/SnapshillBot"
 ARCHIVE_ORG_FORMAT = "%Y%m%d%H%M%S"
@@ -123,13 +123,13 @@ class NameMixin:
 
 
 class ArchiveIsArchive(NameMixin):
-    site_name = "archive.is"
+    site_name = "archive.today"
 
     def __init__(self, url):
         self.url = url
         self.archived = self.archive()
         pairs = {"url": self.url, "run": 1}
-        self.error_link = "https://archive.is/?" + urlencode(pairs)
+        self.error_link = "https://archive.today/?" + urlencode(pairs)
 
     def archive(self):
         """
@@ -140,11 +140,11 @@ class ArchiveIsArchive(NameMixin):
         pairs = {"url": self.url}
 
         try:
-            res = requests.post("https://archive.is/submit/", pairs, verify=False)
+            res = requests.post("https://archive.today/submit/", pairs, verify=False)
         except RECOVERABLE_EXC:
             return False
 
-        found = re.findall("http[s]?://archive.is/[0-z]{1,6}", res.text)
+        found = re.findall("http[s]?://archive.(fo|vn|today|is|li|md|ph)/[0-z]{1,6}", res.text)
 
         if len(found) < 1:
             return False
