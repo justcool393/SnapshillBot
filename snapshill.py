@@ -240,16 +240,14 @@ class Notification:
                 return
             if len(comment) > 9999:
                 link = self.post.permalink
-                submission = self.reddit.submit(
-                    "SnapshillBotEx",
+                submission = self.reddit.subreddit("SnapshillBotEx").submit(
                     "Archives for " + link,
-                    text=comment[:39999],
-                    raise_captcha_exception=True,
+                    selftext=comment[:39999],
                 )
-                submission.add_comment(
+                submission.reply(
                     "The original submission can be found " "here:\n\n" + link
                 )
-                comment = self.post.add_comment(
+                comment = self.post.reply(
                     "Wow, that's a lot of links! The "
                     "snapshots can be [found here.]("
                     + submission.url
@@ -258,7 +256,7 @@ class Notification:
                 )
                 log.info("Posted a comment and new submission")
             else:
-                comment = self.post.add_comment(comment)
+                comment = self.post.reply(comment)
         except RECOVERABLE_EXC as e:
             log_error(e)
             return
