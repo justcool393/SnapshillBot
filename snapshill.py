@@ -14,7 +14,7 @@ from html.parser import unescape
 from urllib.parse import urlencode
 
 from praw.exceptions import APIException, ClientException, PRAWException
-from prawcore.exceptions import NotFound
+from prawcore.exceptions import PrawcoreException
 from requests.exceptions import ConnectionError
 
 USER_AGENT = "Archives to archive.is and archive.org (/r/SnapshillBot) v1.4"
@@ -37,7 +37,7 @@ RECOVERABLE_EXC = (
     APIException,
     ClientException,
     PRAWException,
-    NotFound,
+    PrawcoreException,
     ConnectionError,
 )
 
