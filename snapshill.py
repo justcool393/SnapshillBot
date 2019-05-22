@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 from praw.helpers import flatten_tree
 
 from praw.errors import APIException, ClientException, HTTPException
+from requests.exceptions import ConnectionError
 
 USER_AGENT = "Archives to archive.today and archive.org (/r/SnapshillBot) v1.3"
 INFO = "/r/SnapshillBot"
@@ -33,7 +34,8 @@ SUBREDDIT_OR_USER = re.compile("/(u|user|r)/[^\/]+/?$")
 
 RECOVERABLE_EXC = (APIException,
                    ClientException,
-                   HTTPException)
+                   HTTPException,
+                   ConnectionError)
 
 
 loglevel = logging.DEBUG if os.environ.get("DEBUG") == "true" else logging.INFO
@@ -92,7 +94,7 @@ def fix_url(url):
     :return: Returns a fixed URL
     """
     if url.startswith("r/") or url.startswith("u/"):
-        url = "http://www.reddit.com" + url
+        url = "http://www.reddit.com/" + url
     return re.sub(REDDIT_PATTERN, "http://www.reddit.com", url)
 
 
