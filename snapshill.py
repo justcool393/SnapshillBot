@@ -53,7 +53,7 @@ warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
 
 def get_footer():
-    return "*^(I am just a simple bot, *not* a moderator of this subreddit.) ^\([*bot subreddit*]({info}) ^/ ^[*contact the maintainers*]({contact}))*".format(
+    return "\n\n*I am just a simple bot, **not** a moderator of this subreddit* / [*bot subreddit*]({info}) / [*contact the maintainers*]({contact})".format(
         info=INFO, contact=CONTACT
     )
 
