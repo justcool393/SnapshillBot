@@ -130,12 +130,13 @@ class ArchiveIsArchive(NameMixin):
         except RECOVERABLE_EXC:
             return False
 
-        found = re.findall("http[s]?://archive.(fo|vn|today|is|li|md|ph)/[0-z]{1,6}", res.text)
+        # Note; findall returns a list of tuples [('url', 'tld')]
+        found = re.findall("(http[s]?://archive.(fo|vn|today|is|li|md|ph)/[0-z]{1,6})", res.text)
 
         if len(found) < 1:
             return False
 
-        return found[0]
+        return found[0][0]
 
 
 class ArchiveOrgArchive(NameMixin):
