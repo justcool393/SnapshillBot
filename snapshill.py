@@ -329,7 +329,12 @@ class Header:
         return "" if not self.texts else random.choice(self.texts)
 
     def _get_wiki_content(self):
-        return self._settings.get_wiki_page("extxt/" + self.subreddit.lower()).content_md
+        try:
+            return self._settings.get_wiki_page("extxt/" + self.subreddit.lower()).content_md
+        except TypeError as err:
+            log.debug('could not get wiki content for {} in {} ({})'.format(self.subreddit, self._settings, err))
+
+        return ''
 
     def _parse_quotes(self, quotes_str):
         return [q.strip() for q in re.split('\r\n-{3,}\r\n', quotes_str) if q.strip()]
@@ -422,6 +427,7 @@ class Snapshill:
         self.headers = {"all": Header(self.settings_wiki, "all")}
         for subreddit in r.get_my_subreddits():
             name = subreddit.display_name.lower()
+            log.debug('get header name: {}'.format(name))
             self.headers[name] = Header(self.settings_wiki, name)
 
     def _login(self):
