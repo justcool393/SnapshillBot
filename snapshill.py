@@ -53,7 +53,7 @@ warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
 
 def get_footer():
-    return "\n\n*I am just a simple bot, **not** a moderator of this subreddit* / [*bot subreddit*]({info}) / [*contact the maintainers*]({contact})".format(
+    return "\n\n*I am just a simple bot, **not** a moderator of this subreddit* | [*bot subreddit*]({info}) | [*contact the maintainers*]({contact})".format(
         info=INFO, contact=CONTACT
     )
 
@@ -131,7 +131,9 @@ class ArchiveIsArchive(NameMixin):
             return False
 
         # Note; findall returns a list of tuples [('url', 'tld')]
-        found = re.findall("(http[s]?://archive.(fo|vn|today|is|li|md|ph)/[0-z]{1,6})", res.text)
+        found = re.findall(
+            "(http[s]?://archive.(fo|vn|today|is|li|md|ph)/[0-z]{1,6})", res.text
+        )
 
         if len(found) < 1:
             return False
@@ -242,8 +244,7 @@ class Notification:
             if len(comment) > 9999:
                 link = self.post.permalink
                 submission = self.reddit.subreddit("SnapshillBotEx").submit(
-                    "Archives for " + link,
-                    selftext=comment[:39999],
+                    "Archives for " + link, selftext=comment[:39999]
                 )
                 submission.reply(
                     "The original submission can be found " "here:\n\n" + link
@@ -372,11 +373,7 @@ class Snapshill:
                 log.debug("Skipping.")
                 continue
 
-            archives = [
-                ArchiveContainer(
-                    fix_url(submission.url), "*{}*".format(submission.title)
-                )
-            ]
+            archives = [ArchiveContainer(fix_url(submission.url), submission.title)]
 
             if submission.is_self and submission.selftext_html is not None:
                 log.debug("Found text post...")
