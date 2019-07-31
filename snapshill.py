@@ -380,9 +380,6 @@ class Snapshill:
 
                 links = BeautifulSoup(unescape(submission.selftext_html)).find_all("a")
 
-                if not len(links):
-                    continue
-
                 finishedURLs = []
 
                 for anchor in links:
