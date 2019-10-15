@@ -81,8 +81,10 @@ def fix_url(url):
     :param url: URL to change.
     :return: Returns a fixed URL
     """
-    if url.startswith("/r/") or url.startswith("/u/"):
+    if url.startswith("r/") or url.startswith("u/"):
         url = "http://old.reddit.com/" + url
+    if url.startswith("/r/") or url.startswith("/u/"):
+        url = "http://old.reddit.com" + url
     return re.sub(REDDIT_PATTERN, "http://old.reddit.com", url)
 
 
