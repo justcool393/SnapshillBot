@@ -53,7 +53,7 @@ warnings.simplefilter("ignore")  # Ignore ResourceWarnings (because screw them)
 
 
 def get_footer():
-    return "\n\n*I am just a simple bot, **not** a moderator of this subreddit* | [*bot subreddit*]({info}) | [*contact the maintainers*]({contact})".format(
+    return "\n\n*I am just a simple bot, __not__ a moderator of this subreddit* | [*bot subreddit*]({info}) | [*contact the maintainers*]({contact})".format(
         info=INFO, contact=CONTACT
     )
 
@@ -294,7 +294,8 @@ class Notification:
 
                 subparts.append(format.format(name=archive.name, archive=archive_link))
 
-            parts.append("{}. {} - {}".format(i, link.text, ", ".join(subparts)))
+            link_text = link.text if self.post.subreddit is not "TheseFuckingAccounts" else link.text.replace('u/', 'u\\/')
+            parts.append("{}. {} - {}".format(i, link_text, ", ".join(subparts)))
 
         parts.append(get_footer())
 
