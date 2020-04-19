@@ -27,7 +27,7 @@ LEN_MAX = 35
 REDDIT_API_WAIT = 2
 WARN_TIME = 300  # warn after spending 5 minutes on a post
 REDDIT_PATTERN = re.compile(
-    "https?://(([A-z]{2})(-[A-z]{2})" "?|beta|i|m|pay|ssl|www)\.?reddit\.com"
+    "https?://(([A-z]{2})(-[A-z]{2})" "?|beta|i|m|pay|ssl|www|old|new|alpha)\.?reddit\.com"
 )
 SUBREDDIT_OR_USER = re.compile("/(u|user|r)/[^\/]+/?$")
 # we have to do some manual ratelimiting because we are tunnelling through
