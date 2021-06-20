@@ -340,7 +340,7 @@ class Header:
         return ""
 
     def _parse_quotes(self, quotes_str):
-        return [q.strip() for q in re.split("\r\n-{3,}\r\n", quotes_str) if q.strip()]
+        return [q.strip() for q in re.split("(\r)?\n-{3,}(\r)?\n", quotes_str) if q and q.strip()]
 
 
 class Snapshill:
