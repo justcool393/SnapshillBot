@@ -218,9 +218,12 @@ class ArchiveContainer:
         log.debug("Creating ArchiveContainer")
         self.url = url
         self.text = (text[:LEN_MAX] + "...") if len(text) > LEN_MAX else text
-        self.archives = [ArchiveOrgArchive(url), ArchiveIsArchive(url)]
+        if (url.lower().startswith("http") || url.lower().startswith("https"))
+            self.archives = [ArchiveOrgArchive(url), ArchiveIsArchive(url)]
+        else 
+            self.archives = []
 
-        if re.match(REDDIT_PATTERN, url):
+        if re.match(REDDIT_PATTERN, url): #if doesn't start with http/https this won't run anyway
             self.archives.append(RemovedditArchive(url))
 
 
